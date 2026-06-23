@@ -4,7 +4,19 @@
 
 你可以在网页里维护台词、画面提示词、A-ROLL / B-ROLL、素材类型和时长，再让 Codex 调用 Image Generation、HyperFrames 或 Remotion 生成素材并自动回填。
 
-![Codex Storyboard 演示](docs/assets/codex-storyboard-demo.png)
+## 产品展示
+
+### 项目管理
+
+![Codex Storyboard 项目管理](docs/assets/codex-storyboard-projects.png)
+
+### 分镜工作台
+
+![Codex Storyboard 分镜工作台](docs/assets/codex-storyboard-workspace.png)
+
+### 产品宣传视频
+
+[点击观看 Codex Storyboard 产品宣传视频](docs/assets/codex-storyboard-promo.mp4)
 
 ## 功能
 
