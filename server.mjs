@@ -538,19 +538,39 @@ async function handleShotsApi(request, response, url) {
   }
 
   const mediaMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/shots\/([^/]+)\/media$/);
-  if (mediaMatch && request.method === "POST") {
+  if (mediaMatch) {
     const project = await readProject(decodeURIComponent(mediaMatch[1]));
     const shot = project.shots.find((item) => item.id === decodeURIComponent(mediaMatch[2]));
     if (!shot) return sendError(response, 404, "Shot not found");
 
-    if ((request.headers["content-type"] || "").startsWith("multipart/form-data")) {
-      await saveUploadedMedia(project, shot, request);
-    } else {
-      const body = await readBody(request);
-      if (!body.sourcePath) return sendError(response, 400, "sourcePath is required");
-      await attachMedia(project, shot, body.sourcePath, body.mediaType);
+    if (request.method === "POST") {
+      if ((request.headers["content-type"] || "").startsWith("multipart/form-data")) {
+        await saveUploadedMedia(project, shot, request);
+      } else {
+        const body = await readBody(request);
+        if (!body.sourcePath) return sendError(response, 400, "sourcePath is required");
+        await attachMedia(project, shot, body.sourcePath, body.mediaType);
+      }
+      return sendJson(response, 200, await saveProject(project));
     }
-    return sendJson(response, 200, await saveProject(project));
+
+    if (request.method === "DELETE") {
+      if (shot.generationStatus === "processing") {
+        return sendError(response, 409, "生成中的素材暂时无法删除");
+      }
+      if (shot.mediaUrl) {
+        const fileName = basename(mediaFileNameFromUrl(shot.mediaUrl));
+        await rm(join(projectMediaDir(project.id), fileName), { force: true });
+      }
+      shot.mediaUrl = "";
+      shot.generationStatus = "idle";
+      shot.generationTaskId = "";
+      shot.generationError = "";
+      shot.generationRequestedAt = null;
+      shot.generationStartedAt = null;
+      shot.generationCompletedAt = null;
+      return sendJson(response, 200, await saveProject(project));
+    }
   }
 
   return false;

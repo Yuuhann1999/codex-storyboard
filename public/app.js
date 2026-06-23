@@ -301,12 +301,16 @@ function route() {
 }
 
 function renderPreview(shot, index) {
-  const wrapper = document.createElement("button");
-  wrapper.type = "button";
-  wrapper.className = "preview";
-  wrapper.style.aspectRatio = project.aspectRatio.replace(":", " / ");
+  const frame = document.createElement("div");
+  frame.className = "preview-frame";
+  frame.style.aspectRatio = project.aspectRatio.replace(":", " / ");
   const [ratioWidth, ratioHeight] = project.aspectRatio.split(":").map(Number);
-  if (ratioWidth < ratioHeight) wrapper.classList.add("portrait-preview");
+  if (ratioWidth < ratioHeight) frame.classList.add("portrait-preview");
+
+  const preview = document.createElement("button");
+  preview.type = "button";
+  preview.className = "preview";
+  frame.append(preview);
 
   if (!shot.mediaUrl) {
     const empty = document.createElement("span");
@@ -314,14 +318,14 @@ function renderPreview(shot, index) {
     empty.textContent = shot.generator === "manual"
       ? "点击上传图片/视频"
       : shot.mediaType === "video" ? "等待视频素材" : "等待图片素材";
-    wrapper.append(empty);
+    preview.append(empty);
     if (shot.generator === "manual") {
-      wrapper.classList.add("is-uploadable");
-      wrapper.addEventListener("click", () => chooseUpload(shot.id));
+      preview.classList.add("is-uploadable");
+      preview.addEventListener("click", () => chooseUpload(shot.id));
     } else {
-      wrapper.disabled = true;
+      preview.disabled = true;
     }
-    return wrapper;
+    return frame;
   }
 
   const media = shot.mediaType === "video"
@@ -329,14 +333,28 @@ function renderPreview(shot, index) {
     : document.createElement("img");
   media.src = shot.mediaUrl;
   media.alt = shot.visualPrompt || `镜头 ${index + 1} 素材`;
-  wrapper.append(media);
+  preview.append(media);
 
   const label = document.createElement("span");
   label.className = "media-kind";
   label.textContent = shot.mediaType === "video" ? "VIDEO" : "IMAGE";
-  wrapper.append(label);
-  wrapper.addEventListener("click", () => openLightbox(shot, index));
-  return wrapper;
+  preview.append(label);
+  preview.addEventListener("click", () => openLightbox(shot, index));
+
+  if (shot.generationStatus !== "processing") {
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "remove-media";
+    removeButton.setAttribute("aria-label", "删除素材");
+    removeButton.title = "删除素材";
+    removeButton.textContent = "×";
+    removeButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteMedia(shot);
+    });
+    frame.append(removeButton);
+  }
+  return frame;
 }
 
 function chooseUpload(shotId) {
@@ -361,6 +379,23 @@ async function uploadMedia(file) {
     showToast("素材已上传");
   } catch (error) {
     saveStatus.textContent = "上传失败";
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteMedia(shot) {
+  saveStatus.textContent = "删除素材…";
+  try {
+    project = await api(
+      `/api/projects/${encodeURIComponent(project.id)}/shots/${encodeURIComponent(shot.id)}/media`,
+      { method: "DELETE" }
+    );
+    closeLightbox();
+    renderStoryboard();
+    saveStatus.textContent = "已保存";
+    showToast("素材已删除");
+  } catch (error) {
+    saveStatus.textContent = "删除失败";
     showToast(error.message, "error");
   }
 }

@@ -589,9 +589,20 @@ input:focus-visible, textarea:focus-visible {
   display: grid;
   place-items: center;
 }
-.preview {
+.preview-frame {
   position: relative;
   width: 100%;
+  display: grid;
+  place-items: center;
+}
+.preview-frame.portrait-preview {
+  width: auto;
+  height: 158px;
+  max-width: 100%;
+}
+.preview {
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -604,11 +615,6 @@ input:focus-visible, textarea:focus-visible {
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 20px 20px;
   color: inherit;
-}
-.preview.portrait-preview {
-  width: auto;
-  height: 158px;
-  max-width: 100%;
 }
 .preview:not(:disabled):hover { border-color: #95a4af; }
 .preview:not(:disabled):hover img,
@@ -632,6 +638,38 @@ input:focus-visible, textarea:focus-visible {
   color: white;
   font-size: 9px;
   letter-spacing: .06em;
+}
+.remove-media {
+  position: absolute;
+  z-index: 2;
+  top: 7px;
+  right: 7px;
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  padding: 0 0 2px;
+  border: 1px solid rgba(255,255,255,.24);
+  border-radius: 50%;
+  background: rgba(25,30,34,.78);
+  color: white;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0;
+  transform: scale(.9);
+  transition: opacity 120ms ease, transform 120ms ease, background 120ms ease;
+  backdrop-filter: blur(8px);
+}
+.preview-frame:hover .remove-media,
+.preview-frame:focus-within .remove-media {
+  opacity: 1;
+  transform: scale(1);
+}
+.remove-media:hover,
+.remove-media:focus-visible {
+  outline: 0;
+  background: #c63838;
+  box-shadow: 0 0 0 3px rgba(198,56,56,.2);
 }
 .generation-controls {
   min-height: 28px;
