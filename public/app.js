@@ -490,6 +490,14 @@ function openSelect(trigger, field, shot, onChange) {
   menu.querySelector('[aria-selected="true"]')?.focus();
 }
 
+function updateSelectTrigger(trigger, field, value) {
+  const label = trigger.querySelector(".select-value");
+  label.className = `select-value ${
+    field === "rollType" ? (value === "A-ROLL" ? "roll-a" : "roll-b") : ""
+  }`;
+  label.textContent = selectLabel(field, value);
+}
+
 function renderSelect(container, field, shot, onChange) {
   const trigger = document.createElement("button");
   trigger.type = "button";
@@ -511,6 +519,7 @@ function renderSelect(container, field, shot, onChange) {
   trigger.append(value, chevron);
   const activate = () => openSelect(trigger, field, shot, (nextValue) => {
     shot[field] = nextValue;
+    updateSelectTrigger(trigger, field, nextValue);
     onChange(field);
   });
   trigger.addEventListener("click", activate);
