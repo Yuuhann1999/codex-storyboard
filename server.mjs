@@ -536,7 +536,7 @@ async function handleGenerationApi(request, response, url) {
         skipped.push({ shotId: shot.id, reason: "missing-prompt" });
         continue;
       }
-      if (!force && ["pending", "processing"].includes(shot.generationStatus)) {
+      if (["pending", "processing"].includes(shot.generationStatus)) {
         skipped.push({ shotId: shot.id, reason: shot.generationStatus });
         continue;
       }

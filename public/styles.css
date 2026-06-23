@@ -97,8 +97,16 @@ button:disabled { cursor: not-allowed; }
   border-radius: 8px;
   background: var(--ink);
   color: white;
-  font-size: 17px;
-  font-weight: 700;
+}
+.mark svg {
+  width: 21px;
+  height: 21px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .header-actions,
@@ -212,10 +220,10 @@ button:disabled { cursor: not-allowed; }
 }
 .projects-intro h1 {
   margin: 0;
-  font-family: "Songti SC", "STSong", serif;
+  font-family: "SF Pro Rounded", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   font-size: clamp(30px, 4vw, 46px);
-  font-weight: 650;
-  letter-spacing: -.04em;
+  font-weight: 720;
+  letter-spacing: -.035em;
 }
 .projects-intro p:last-child { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
 .project-count {
@@ -389,8 +397,23 @@ input:focus-visible, textarea:focus-visible {
   box-shadow: 0 0 0 3px var(--focus);
 }
 .duration-input { position: relative; }
-.duration-input span { position: absolute; right: 8px; color: var(--muted); font-size: 10px; }
-.duration-input input { padding-right: 27px; }
+.duration-input span {
+  position: absolute;
+  right: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+.duration-input input {
+  padding-right: 27px;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+.duration-input input::-webkit-inner-spin-button,
+.duration-input input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
 
 .select-trigger {
   width: 100%;
@@ -617,11 +640,39 @@ input:focus-visible, textarea:focus-visible {
   border: 0;
 }
 .ratio-options legend { margin-bottom: 9px; }
-.ratio-option { position: relative; display: grid; justify-items: center; gap: 7px; padding: 10px 5px; border: 1px solid #d8dee4; border-radius: 9px; cursor: pointer; }
+.ratio-option {
+  position: relative;
+  display: grid;
+  grid-template-rows: 38px 14px;
+  justify-items: center;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 5px 9px;
+  border: 1px solid #d8dee4;
+  border-radius: 9px;
+  cursor: pointer;
+}
 .ratio-option input { position: absolute; opacity: 0; pointer-events: none; }
 .ratio-option:has(input:checked) { border-color: var(--accent); background: #effafb; box-shadow: 0 0 0 2px var(--focus); }
-.ratio-shape { width: 24px; max-height: 34px; border: 1.5px solid #687580; border-radius: 2px; }
-.ratio-option strong { font-size: 10px; font-variant-numeric: tabular-nums; }
+.ratio-shape-stage {
+  width: 42px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+}
+.ratio-shape {
+  width: auto;
+  height: auto;
+  max-width: 38px;
+  max-height: 34px;
+  border: 1.5px solid #687580;
+  border-radius: 2px;
+}
+.ratio-option strong {
+  line-height: 14px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
 .dialog-actions { justify-content: flex-end; gap: 8px; margin-top: 24px; }
 .delete-message { margin: 22px 0 0; color: #596470; font-size: 13px; line-height: 1.7; }
 .danger-text { color: #bd2c2c; }

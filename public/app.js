@@ -41,6 +41,7 @@ const selectOptions = {
 let project = null;
 let projects = [];
 let saveTimer;
+let savePromise = Promise.resolve();
 let pollTimer;
 let activeSelect;
 let dialogMode = "create";
@@ -128,10 +129,23 @@ function generationLabel(shot) {
 
 function generationButtonLabel(shot) {
   if (shot.generator === "manual") return shot.mediaUrl ? "重新上传" : "本地上传";
-  if (shot.generationStatus === "ready" || shot.generationStatus === "failed") return "重新生成";
   if (shot.generationStatus === "pending") return "取消队列";
   if (shot.generationStatus === "processing") return "生成中";
+  if (!shot.visualPrompt.trim() && !["pending", "processing"].includes(shot.generationStatus)) {
+    return "填写画面描述";
+  }
+  if (shot.generationStatus === "ready" || shot.generationStatus === "failed") return "重新生成";
   return "生成素材";
+}
+
+function isBatchGeneratable(shot) {
+  return shot.generator !== "manual" && Boolean(shot.visualPrompt.trim());
+}
+
+function updateBatchButton() {
+  const count = project?.shots.filter(isBatchGeneratable).length || 0;
+  generateAllButton.disabled = count === 0;
+  generateAllButton.textContent = count > 0 ? `批量生成 ${count}` : "批量生成";
 }
 
 function projectPath(projectId) {
@@ -171,12 +185,18 @@ function renderRatioOptions() {
     input.type = "radio";
     input.name = "aspectRatio";
     input.value = ratio;
+    const shapeStage = document.createElement("span");
+    shapeStage.className = "ratio-shape-stage";
     const shape = document.createElement("span");
     shape.className = "ratio-shape";
     shape.style.aspectRatio = ratio.replace(":", " / ");
+    const [ratioWidth, ratioHeight] = ratio.split(":").map(Number);
+    if (ratioWidth <= ratioHeight) shape.style.height = "34px";
+    else shape.style.width = "38px";
+    shapeStage.append(shape);
     const text = document.createElement("strong");
     text.textContent = ratio;
-    label.append(input, shape, text);
+    label.append(input, shapeStage, text);
     ratioOptions.append(label);
   });
 }
@@ -272,7 +292,7 @@ function renderPreview(shot, index) {
     const empty = document.createElement("span");
     empty.className = "empty-preview";
     empty.textContent = shot.generator === "manual"
-      ? `点击上传${shot.mediaType === "video" ? "视频" : "图片"}`
+      ? "点击上传图片/视频"
       : shot.mediaType === "video" ? "等待视频素材" : "等待图片素材";
     wrapper.append(empty);
     if (shot.generator === "manual") {
@@ -457,15 +477,28 @@ function updateSummary() {
 function queueSave() {
   saveStatus.textContent = "保存中…";
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveProject, 450);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    savePromise = saveProject();
+  }, 450);
+}
+
+async function flushSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    savePromise = saveProject();
+  }
+  await savePromise;
 }
 
 async function saveProject() {
   try {
-    project = await api(`/api/projects/${encodeURIComponent(project.id)}`, {
+    const saved = await api(`/api/projects/${encodeURIComponent(project.id)}`, {
       method: "PUT",
       body: JSON.stringify(project)
     });
+    project.updatedAt = saved.updatedAt;
     saveStatus.textContent = "已保存";
   } catch (error) {
     saveStatus.textContent = "保存失败";
@@ -492,6 +525,14 @@ function renderStoryboard() {
       control.addEventListener("input", () => {
         shot[field] = field === "duration" ? Number(control.value) : control.value;
         updateSummary();
+        if (field === "visualPrompt") {
+          updateBatchButton();
+          const generateButton = row.querySelector(".generate-shot");
+          generateButton.textContent = generationButtonLabel(shot);
+          generateButton.disabled =
+            shot.generationStatus === "processing" ||
+            (shot.generationStatus !== "pending" && !shot.visualPrompt.trim());
+        }
         queueSave();
       });
     });
@@ -512,7 +553,9 @@ function renderStoryboard() {
 
     const generateButton = row.querySelector(".generate-shot");
     generateButton.textContent = generationButtonLabel(shot);
-    generateButton.disabled = shot.generationStatus === "processing";
+    generateButton.disabled =
+      shot.generationStatus === "processing" ||
+      (shot.generator !== "manual" && !shot.visualPrompt.trim());
     generateButton.dataset.action = shot.generationStatus === "pending" ? "cancel" : "generate";
     generateButton.addEventListener("click", () => {
       if (shot.generator === "manual") return chooseUpload(shot.id);
@@ -535,14 +578,7 @@ function renderStoryboard() {
   });
 
   updateSummary();
-  const eligible = project.shots.filter(
-    (shot) =>
-      shot.generator !== "manual" &&
-      shot.visualPrompt.trim() &&
-      !["pending", "processing", "ready"].includes(shot.generationStatus)
-  );
-  generateAllButton.disabled = eligible.length === 0;
-  generateAllButton.textContent = eligible.length > 0 ? `批量生成 ${eligible.length}` : "批量生成";
+  updateBatchButton();
 }
 
 async function cancelGeneration(shot) {
@@ -571,12 +607,15 @@ async function cancelGeneration(shot) {
 async function queueGeneration(shotIds, force = false) {
   saveStatus.textContent = "提交生成任务…";
   try {
+    await flushSave();
     const result = await api("/api/generation/tasks", {
       method: "POST",
       body: JSON.stringify({ projectId: project.id, shotIds, force })
     });
     project = result.project;
-    saveStatus.textContent = result.queued.length > 0 ? "已加入生成队列" : "没有可生成镜头";
+    saveStatus.textContent = result.queued.length > 0
+      ? `已提交 ${result.queued.length} 个生成任务`
+      : "任务已在队列或生成中";
     renderStoryboard();
   } catch (error) {
     saveStatus.textContent = "提交失败";
@@ -656,15 +695,8 @@ document.querySelector("#confirm-delete").addEventListener("click", async (event
 });
 
 generateAllButton.addEventListener("click", async () => {
-  const shotIds = project.shots
-    .filter(
-      (shot) =>
-        shot.generator !== "manual" &&
-        shot.visualPrompt.trim() &&
-        !["pending", "processing", "ready"].includes(shot.generationStatus)
-    )
-    .map((shot) => shot.id);
-  await queueGeneration(shotIds);
+  const shotIds = project.shots.filter(isBatchGeneratable).map((shot) => shot.id);
+  await queueGeneration(shotIds, true);
 });
 
 mediaUpload.addEventListener("change", () => uploadMedia(mediaUpload.files?.[0]));
