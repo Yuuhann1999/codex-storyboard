@@ -1,14 +1,29 @@
-# Codex Storyboard / Codex 分镜台
+<p align="center">
+  <img src="docs/assets/codex-storyboard-cover.png" alt="Codex Storyboard 顶部主视觉" width="900">
+</p>
 
-### Codex 里的本地视频分镜工作台：一句话创建项目，自动生成脚本、素材并回填分镜表。
+<h1 align="center">Codex Storyboard / Codex 分镜台</h1>
 
-![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-111827)
-![MCP](https://img.shields.io/badge/MCP-Ready-0ea5e9)
-![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933)
-![Local First](https://img.shields.io/badge/Local--first-Yes-blue)
+<p align="center">
+  Codex 里的本地视频分镜工作台：一句话创建项目，自动生成脚本、素材并回填分镜表。
+</p>
 
-快速安装 · 界面展示 · 使用流程 · 插件工作流 · DESIGN.md 视觉规范 · 隐私说明
+<p align="center">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/Codex-Plugin-111827" alt="Codex Plugin">
+  <img src="https://img.shields.io/badge/MCP-Ready-0ea5e9" alt="MCP Ready">
+  <img src="https://img.shields.io/badge/Node.js-18%2B-339933" alt="Node.js 18+">
+  <img src="https://img.shields.io/badge/Local--first-Yes-blue" alt="Local first">
+</p>
+
+<p align="center">
+  <a href="#快速开始">快速安装</a> ·
+  <a href="#界面展示">界面展示</a> ·
+  <a href="#使用流程">使用流程</a> ·
+  <a href="#codex-插件工作流">插件工作流</a> ·
+  <a href="#designmd-视觉规范">DESIGN.md 视觉规范</a> ·
+  <a href="#隐私说明">隐私说明</a>
+</p>
 
 ---
 
