@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs --data-dir ./data",
-    "check": "node --check server.mjs && node --check public/app.js && node --check plugins/codex-storyboard/mcp/server.mjs && node --check plugins/codex-storyboard/app/server.mjs && node --check plugins/codex-storyboard/app/public/app.js"
+    "check": "node --check server.mjs && node --check public/app.js && node --check plugins/codex-storyboard/mcp/server.mjs && node --check plugins/codex-storyboard/app/server.mjs && node --check plugins/codex-storyboard/app/public/app.js",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage"
   }
 }
