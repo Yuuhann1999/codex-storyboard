@@ -15,6 +15,7 @@ Process the local storyboard queue. The MCP tools start the bundled local app au
    - `image-gen` requires the built-in `imagegen` skill and image generation tool.
    - `hyperframes` requires the HyperFrames and HyperFrames CLI skills.
    - `remotion` requires the Remotion skill and its local rendering toolchain.
+   - `api-video` requires the matching provider environment variable and packaged provider script. MiniMax tasks require `MINIMAX_API_KEY`.
 
    If a required capability is unavailable, do not claim affected tasks. Report the exact missing capability and continue with tasks whose generators are available.
 
@@ -31,6 +32,7 @@ Process the local storyboard queue. The MCP tools start the bundled local app au
    - `image-gen`: use the built-in `imagegen` skill and built-in image generation tool. Treat `visualPrompt` as the primary prompt and honor the task's `aspectRatio`. If the task includes `referenceImagePath`, use that local image as the visual reference/input for the generation or edit. Copy the final verified image into the active workspace before completing the task.
    - `hyperframes`: use the HyperFrames and HyperFrames CLI skills. Create a self-contained composition using the task's `width`, `height`, duration, and `visualPrompt`, then lint, inspect, render to MP4, and verify the output.
    - `remotion`: use the Remotion skill. Create or reuse a Remotion composition using the task's `width` and `height`, render an MP4 matching the task duration, and verify the output.
+   - `api-video`: route by `provider`. For `minimax`, run the packaged `scripts/process-minimax-task.mjs` with `node`, `--task-id <taskId>`, and the local app URL. The script claims pending tasks, persists MiniMax's task ID immediately, resumes processing tasks after interruption, polls at the documented interval, downloads the MP4, and completes or fails the storyboard task. Do not submit the same task manually in parallel.
 
 7. Call `complete_storyboard_generation_task` with the exact absolute output path and correct media type.
 8. If generation or verification fails, call `fail_storyboard_generation_task` with the concise cause.
@@ -47,6 +49,8 @@ Use the exact absolute `outputDir` supplied by the task. Keep all generated sour
 - Do not use external API keys for Image Generation when the built-in image tool is available.
 - Do not process `manual` generator rows.
 - Preserve the requested duration for video tasks.
+- For API video tasks, use `effectivePrompt` rather than dropping the project style or character context.
+- Never retry quota, authentication, invalid-parameter, or content-policy failures. The provider script only retries temporary network, rate-limit, and server failures.
 - Preserve `projectId`, `aspectRatio`, `width`, and `height`; never return an asset to a different project.
 - Never guess, truncate, or partially read `DESIGN.md` when `hasDesign` is true.
 - Do not apply a DESIGN.md from the active workspace or another project; only use the task's exact `designPath`.

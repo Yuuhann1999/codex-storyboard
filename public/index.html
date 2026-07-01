@@ -70,6 +70,9 @@
             <button id="open-cover-panel" class="design-menu-item" type="button" role="menuitem">
               封面工作台
             </button>
+            <button id="open-generation-settings" class="design-menu-item" type="button" role="menuitem">
+              视频生成设置
+            </button>
             <div class="menu-separator" aria-hidden="true"></div>
             <div class="menu-section-title design-section-title">
               <span>视觉规范</span>
@@ -196,6 +199,14 @@
             <span class="generation-status"></span>
             <button class="generate-shot" type="button">生成素材</button>
           </div>
+          <div class="api-video-controls" hidden>
+            <select class="shot-model" aria-label="镜头视频模型">
+              <option value="">继承项目默认模型</option>
+              <option value="minimax:MiniMax-Hailuo-2.3">MiniMax · Hailuo 2.3</option>
+            </select>
+            <button class="first-frame-upload secondary compact-button" type="button">上传首帧</button>
+            <button class="first-frame-remove secondary compact-button" type="button" hidden>移除首帧</button>
+          </div>
         </div>
       </td>
       <td><textarea data-field="notes" placeholder="补充说明"></textarea></td>
@@ -231,6 +242,49 @@
       <div class="dialog-actions">
         <button class="secondary" type="button" data-close-dialog>取消</button>
         <button id="project-submit" class="primary" type="submit">创建项目</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="generation-settings-dialog" class="form-dialog generation-settings-dialog">
+    <form id="generation-settings-form" method="dialog">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">Video Providers</p>
+          <h2>视频生成设置</h2>
+        </div>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <label class="form-field">
+        <span>项目默认模型</span>
+        <select id="default-video-model">
+          <option value="minimax:MiniMax-Hailuo-2.3">MiniMax · Hailuo 2.3</option>
+        </select>
+      </label>
+      <label class="form-field">
+        <span>默认分辨率</span>
+        <select id="default-video-resolution">
+          <option value="768P">768P（支持 6 秒 / 10 秒）</option>
+          <option value="1080P">1080P（仅支持 6 秒）</option>
+        </select>
+      </label>
+      <label class="form-field">
+        <span>统一视觉风格</span>
+        <textarea id="project-style-prompt" placeholder="例如：暖色电影质感、柔和自然光、写实摄影"></textarea>
+      </label>
+      <label class="form-field">
+        <span>主角固定描述</span>
+        <textarea id="project-character-prompt" placeholder="固定写明外貌、发型、服装和显著特征"></textarea>
+      </label>
+      <label class="form-field">
+        <span>MiniMax Token Plan Key</span>
+        <input id="minimax-api-key" type="password" autocomplete="new-password" placeholder="已配置时留空即可" />
+        <small id="minimax-key-status">检查配置中…</small>
+      </label>
+      <p class="form-hint">密钥写入 Windows 用户环境变量 MINIMAX_API_KEY，不保存到项目或 Git。</p>
+      <div class="dialog-actions">
+        <button class="secondary" type="button" data-close-dialog>取消</button>
+        <button class="primary" type="submit">保存设置</button>
       </div>
     </form>
   </dialog>
@@ -364,6 +418,7 @@
   />
   <input id="cover-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
   <input id="cover-reference-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+  <input id="first-frame-upload" type="file" accept="image/png,image/jpeg,image/webp" hidden />
   <input id="project-design-upload" type="file" accept=".md,text/markdown,text/plain" hidden />
   <input id="design-upload" type="file" accept=".md,text/markdown,text/plain" hidden />
   <div id="select-portal"></div>

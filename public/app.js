@@ -35,6 +35,9 @@ const coverPrompt = document.querySelector("#cover-prompt");
 const coverUpload = document.querySelector("#cover-upload");
 const coverReferenceUpload = document.querySelector("#cover-reference-upload");
 const coverReferencePreview = document.querySelector("#cover-reference-preview");
+const generationSettingsDialog = document.querySelector("#generation-settings-dialog");
+const generationSettingsForm = document.querySelector("#generation-settings-form");
+const firstFrameUpload = document.querySelector("#first-frame-upload");
 const toast = document.querySelector("#toast");
 const themeButtons = document.querySelectorAll("[data-theme-toggle]");
 const themeStorageKey = "codex-storyboard-theme";
@@ -53,7 +56,8 @@ const selectOptions = {
     { value: "manual", label: "手动素材" },
     { value: "image-gen", label: "Image Generation" },
     { value: "hyperframes", label: "HyperFrames" },
-    { value: "remotion", label: "Remotion" }
+    { value: "remotion", label: "Remotion" },
+    { value: "api-video", label: "视频 API" }
   ]
 };
 
@@ -163,6 +167,7 @@ let pendingProjectDesign = null;
 let designMenuPinned = false;
 let designMenuCloseTimer;
 let activeCoverType = "vertical";
+let firstFrameShotId = "";
 
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
@@ -209,19 +214,46 @@ function showToast(message, type = "info") {
 }
 
 function emptyShot() {
+  const generation = project?.generation || {
+    provider: "minimax",
+    model: "MiniMax-Hailuo-2.3",
+    duration: 6,
+    resolution: "768P"
+  };
   return {
     rollType: "B-ROLL",
     mediaType: "image",
-    duration: 5,
+    duration: generation.duration || 6,
     dialogue: "",
     visualPrompt: "",
     generator: "image-gen",
+    provider: "",
+    model: "",
+    resolution: "",
+    firstFrameUrl: "",
     mediaUrl: "",
     notes: "",
     generationStatus: "idle",
     generationTaskId: "",
     generationError: ""
   };
+}
+
+function selectedShotModelValue(shot) {
+  return shot.provider && shot.model ? `${shot.provider}:${shot.model}` : "";
+}
+
+function normalizeApiVideoDuration(shot) {
+  if (shot.generator !== "api-video") return;
+  const resolution = shot.resolution || project.generation?.resolution || "768P";
+  const allowed = resolution === "1080P" ? [6] : [6, 10];
+  if (!allowed.includes(Number(shot.duration))) {
+    shot.duration = allowed.reduce((best, value) =>
+      Math.abs(value - Number(shot.duration || 0)) < Math.abs(best - Number(shot.duration || 0))
+        ? value
+        : best
+    );
+  }
 }
 
 function emptyCover(type) {
@@ -1306,6 +1338,10 @@ function renderStoryboard() {
       control.value = shot[field];
       control.addEventListener("input", () => {
         shot[field] = field === "duration" ? Number(control.value) : control.value;
+        if (field === "duration" && shot.generator === "api-video") {
+          normalizeApiVideoDuration(shot);
+          control.value = shot.duration;
+        }
         updateSummary();
         if (field === "visualPrompt") {
           updateBatchButton();
@@ -1322,10 +1358,40 @@ function renderStoryboard() {
     row.querySelectorAll("[data-select-field]").forEach((container) => {
       const field = container.dataset.selectField;
       renderSelect(container, field, shot, (changedField) => {
-        if (changedField === "generator" || changedField === "mediaType") renderStoryboard();
+        if (changedField === "generator") {
+          if (shot.generator === "api-video") {
+            shot.mediaType = "video";
+            normalizeApiVideoDuration(shot);
+          }
+          renderStoryboard();
+        } else if (changedField === "mediaType") renderStoryboard();
         queueSave();
       });
     });
+
+    const apiVideoControls = row.querySelector(".api-video-controls");
+    if (shot.generator === "api-video") {
+      apiVideoControls.hidden = false;
+      const modelSelect = apiVideoControls.querySelector(".shot-model");
+      modelSelect.value = selectedShotModelValue(shot);
+      modelSelect.addEventListener("change", () => {
+        const [provider = "", ...modelParts] = modelSelect.value.split(":");
+        shot.provider = provider;
+        shot.model = modelParts.join(":");
+        normalizeApiVideoDuration(shot);
+        queueSave();
+      });
+      const uploadFirstFrame = apiVideoControls.querySelector(".first-frame-upload");
+      uploadFirstFrame.textContent = shot.firstFrameUrl ? "替换首帧" : "上传首帧";
+      uploadFirstFrame.addEventListener("click", () => {
+        firstFrameShotId = shot.id;
+        firstFrameUpload.value = "";
+        firstFrameUpload.click();
+      });
+      const removeFirstFrame = apiVideoControls.querySelector(".first-frame-remove");
+      removeFirstFrame.hidden = !shot.firstFrameUrl;
+      removeFirstFrame.addEventListener("click", () => removeShotFirstFrame(shot));
+    }
 
     row.querySelector(".preview-slot").append(renderPreview(shot, index));
     const status = row.querySelector(".generation-status");
@@ -1362,6 +1428,43 @@ function renderStoryboard() {
   updateSummary();
   updateBatchButton();
   if (!coverPanel.hidden) renderCoverPanel();
+}
+
+async function uploadShotFirstFrame(file) {
+  if (!file || !firstFrameShotId) return;
+  const form = new FormData();
+  form.append("file", file);
+  project = await api(
+    `/api/projects/${encodeURIComponent(project.id)}/shots/${encodeURIComponent(firstFrameShotId)}/first-frame`,
+    { method: "POST", body: form }
+  );
+  renderStoryboard();
+  showToast("首帧参考图已保存");
+}
+
+async function removeShotFirstFrame(shot) {
+  project = await api(
+    `/api/projects/${encodeURIComponent(project.id)}/shots/${encodeURIComponent(shot.id)}/first-frame`,
+    { method: "DELETE" }
+  );
+  renderStoryboard();
+  showToast("首帧参考图已移除");
+}
+
+async function openGenerationSettings() {
+  closeDesignMenu(true);
+  const generation = project.generation || {};
+  document.querySelector("#default-video-model").value =
+    `${generation.provider || "minimax"}:${generation.model || "MiniMax-Hailuo-2.3"}`;
+  document.querySelector("#default-video-resolution").value = generation.resolution || "768P";
+  document.querySelector("#project-style-prompt").value = project.stylePrompt || "";
+  document.querySelector("#project-character-prompt").value = project.characterPrompt || "";
+  document.querySelector("#minimax-api-key").value = "";
+  const status = await api("/api/settings/minimax");
+  document.querySelector("#minimax-key-status").textContent = status.configured
+    ? "已配置 MINIMAX_API_KEY"
+    : "尚未配置";
+  generationSettingsDialog.showModal();
 }
 
 function renderDesignState() {
@@ -1525,6 +1628,33 @@ document.querySelector("#brand-home").addEventListener("click", () => navigate("
 document.querySelector("#back-home").addEventListener("click", () => navigate("/"));
 document.querySelector("#add-shot-top").addEventListener("click", addShot);
 document.querySelector("#add-shot-bottom").addEventListener("click", addShot);
+document.querySelector("#open-generation-settings").addEventListener("click", openGenerationSettings);
+firstFrameUpload.addEventListener("change", () => uploadShotFirstFrame(firstFrameUpload.files?.[0]));
+
+generationSettingsForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const [provider, ...modelParts] = document.querySelector("#default-video-model").value.split(":");
+  project.generation = {
+    provider,
+    model: modelParts.join(":"),
+    resolution: document.querySelector("#default-video-resolution").value,
+    duration: project.generation?.duration || 6
+  };
+  project.stylePrompt = document.querySelector("#project-style-prompt").value.trim();
+  project.characterPrompt = document.querySelector("#project-character-prompt").value.trim();
+  const apiKey = document.querySelector("#minimax-api-key").value.trim();
+  if (apiKey) {
+    await api("/api/settings/minimax", {
+      method: "POST",
+      body: JSON.stringify({ apiKey })
+    });
+  }
+  project.shots.forEach(normalizeApiVideoDuration);
+  await saveProject();
+  generationSettingsDialog.close();
+  renderStoryboard();
+  showToast(apiKey ? "设置已保存；新环境变量将在后续进程中生效" : "视频生成设置已保存");
+});
 
 projectForm.addEventListener("submit", async (event) => {
   event.preventDefault();

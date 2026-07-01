@@ -177,6 +177,26 @@ flowchart LR
 @codex-storyboard 处理所有待生成素材。优先生成 Image Generation 图片，再生成 HyperFrames 和 Remotion 视频。
 ```
 
+## MiniMax 视频生成
+
+首版支持 `MiniMax-Hailuo-2.3` 的文生视频和首帧图生视频：
+
+1. 在项目右上角打开“项目 → 视频生成设置”。
+2. 设置项目默认模型、分辨率、统一视觉风格和主角固定描述。
+3. 将镜头的生成方式改成“视频 API”，选择继承项目模型或镜头级覆盖。
+4. 可选上传首帧参考图。支持 PNG、JPEG、WebP，最大 20MB。
+5. 点击生成按钮入队；Codex 领取任务后运行 MiniMax Provider，保存厂商任务 ID，轮询并回填 MP4。
+
+Hailuo 2.3 的可选组合由应用强制约束：768P 支持 6 秒或 10 秒，1080P 仅支持 6 秒。项目视觉风格、主角描述和镜头提示词会合并后提交，合并结果不得超过 2000 字符。
+
+MiniMax Token Plan Key 在设置页写入 Windows 用户环境变量：
+
+```text
+MINIMAX_API_KEY
+```
+
+密钥不会写入项目数据或仓库。新的外部进程通常需要重启后才能读取刚保存的用户环境变量；当前分镜台进程可立即使用。
+
 查找项目：
 
 ```text
@@ -347,10 +367,17 @@ POST   /api/projects/:projectId/shots
 PATCH  /api/projects/:projectId/shots/:shotId
 DELETE /api/projects/:projectId/shots/:shotId
 POST   /api/projects/:projectId/shots/:shotId/media
+POST   /api/projects/:projectId/shots/:shotId/first-frame
+DELETE /api/projects/:projectId/shots/:shotId/first-frame
+
+GET    /api/video-models
+GET    /api/settings/minimax
+POST   /api/settings/minimax
 
 GET    /api/generation/tasks
 POST   /api/generation/tasks
 POST   /api/generation/tasks/:taskId/claim
+POST   /api/generation/tasks/:taskId/provider
 POST   /api/generation/tasks/:taskId/complete
 POST   /api/generation/tasks/:taskId/fail
 ```

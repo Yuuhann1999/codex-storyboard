@@ -693,6 +693,39 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   justify-content: space-between;
   gap: 8px;
 }
+
+.api-video-controls {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.api-video-controls[hidden] {
+  display: none;
+}
+
+.shot-model,
+.generation-settings-dialog select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  padding: 0 9px;
+  font: inherit;
+}
+
+.generation-settings-dialog textarea {
+  min-height: 76px;
+}
+
+.form-field small,
+.form-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .generation-status {
   min-width: 0;
   overflow: hidden;

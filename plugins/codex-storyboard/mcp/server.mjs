@@ -160,7 +160,7 @@ function shotSchema({ requireId = false } = {}) {
       visualPrompt: { type: "string" },
       generator: {
         type: "string",
-        enum: ["manual", "image-gen", "hyperframes", "remotion"]
+        enum: ["manual", "image-gen", "hyperframes", "remotion", "api-video"]
       },
       notes: { type: "string" }
     },
@@ -359,7 +359,7 @@ function tools() {
     {
       name: "claim_storyboard_generation_task",
       title: "Claim Storyboard Generation Task",
-      description: "Mark a pending storyboard task as processing before starting Image Generation, HyperFrames, or Remotion work.",
+      description: "Mark a pending storyboard task as processing before starting image, local-render, or API video work.",
       inputSchema: {
         type: "object",
         properties: {
@@ -597,7 +597,9 @@ async function callTool(id, params) {
               ? `cover ${task.coverType}`
               : `shot ${task.shotIndex}`;
             const reference = task.referenceImagePath ? ` | reference: ${task.referenceImagePath}` : "";
-            return `${task.taskId} | ${task.projectTitle} (${task.aspectRatio}) | ${target} | ${task.generator} | ${task.mediaType} | ${task.status} | design: ${task.hasDesign ? task.designPath : "none"}${reference} | output: ${task.outputDir}\n${task.visualPrompt}`;
+            const provider = task.provider ? ` | provider: ${task.provider}/${task.model}` : "";
+            const resume = task.providerTaskId ? ` | provider-task: ${task.providerTaskId}` : "";
+            return `${task.taskId} | ${task.projectTitle} (${task.aspectRatio}) | ${target} | ${task.generator} | ${task.mediaType} | ${task.status}${provider}${resume} | design: ${task.hasDesign ? task.designPath : "none"}${reference} | output: ${task.outputDir}\n${task.effectivePrompt || task.visualPrompt}`;
           })
           .join("\n\n");
     sendResult(id, {

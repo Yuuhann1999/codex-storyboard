@@ -12,6 +12,15 @@ import {
 } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  buildGenerationPrompt,
+  getAllowedDurations,
+  getModelCapabilities,
+  listVideoModels,
+  normalizeGenerationSettings,
+  resolveShotModel
+} from "./lib/video-models.mjs";
+import { persistUserEnvironmentVariable } from "./lib/local-environment.mjs";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 const args = parseArgs(process.argv.slice(2));
@@ -155,9 +164,13 @@ function normalizeShot(shot = {}) {
     duration: Number.isFinite(Number(shot.duration)) ? Number(shot.duration) : 5,
     dialogue: String(shot.dialogue || ""),
     visualPrompt: String(shot.visualPrompt || ""),
-    generator: ["manual", "image-gen", "hyperframes", "remotion"].includes(shot.generator)
+    generator: ["manual", "image-gen", "hyperframes", "remotion", "api-video"].includes(shot.generator)
       ? shot.generator
       : "manual",
+    provider: String(shot.provider || ""),
+    model: String(shot.model || ""),
+    resolution: String(shot.resolution || ""),
+    firstFrameUrl: String(shot.firstFrameUrl || ""),
     mediaUrl: String(shot.mediaUrl || ""),
     notes: String(shot.notes || ""),
     generationStatus,
@@ -165,7 +178,10 @@ function normalizeShot(shot = {}) {
     generationError: String(shot.generationError || ""),
     generationRequestedAt: shot.generationRequestedAt || null,
     generationStartedAt: shot.generationStartedAt || null,
-    generationCompletedAt: shot.generationCompletedAt || null
+    generationCompletedAt: shot.generationCompletedAt || null,
+    providerTaskId: String(shot.providerTaskId || ""),
+    providerStatus: String(shot.providerStatus || ""),
+    providerAttempts: Number.isFinite(Number(shot.providerAttempts)) ? Number(shot.providerAttempts) : 0
   };
 }
 
@@ -203,16 +219,34 @@ function normalizeCovers(covers = {}) {
 
 function normalizeProject(project = {}) {
   const now = new Date().toISOString();
-  return {
+  const normalized = {
     id: String(project.id || createId("project")),
     title: String(project.title || "未命名项目").trim() || "未命名项目",
     aspectRatio: normalizeAspectRatio(project.aspectRatio),
     hasDesign: Boolean(project.hasDesign),
     covers: normalizeCovers(project.covers),
     shots: Array.isArray(project.shots) ? project.shots.map(normalizeShot) : [],
+    generation: normalizeGenerationSettings(project.generation),
+    stylePrompt: String(project.stylePrompt || ""),
+    characterPrompt: String(project.characterPrompt || ""),
     createdAt: project.createdAt || now,
     updatedAt: project.updatedAt || now
   };
+  normalized.shots = normalized.shots.map((shot) => {
+    if (shot.generator !== "api-video" || shot.mediaType !== "video") return shot;
+    const selected = resolveShotModel(normalized, shot);
+    const capabilities = getModelCapabilities(selected.provider, selected.model);
+    if (!capabilities) return shot;
+    const resolution = shot.resolution || normalized.generation.resolution;
+    const durations = getAllowedDurations(selected.provider, selected.model, resolution);
+    return {
+      ...shot,
+      duration: durations.includes(shot.duration)
+        ? shot.duration
+        : durations[0]
+    };
+  });
+  return normalized;
 }
 
 function projectDir(projectId) {
@@ -299,6 +333,11 @@ function coverReferenceFileName(type, extension) {
   return `cover-${type === "horizontal" ? "horizontal" : "vertical"}-reference${extension}`;
 }
 
+function shotFirstFrameFileName(project, shot, extension) {
+  const index = project.shots.findIndex((item) => item.id === shot.id) + 1;
+  return `shot-${String(Math.max(index, 1)).padStart(3, "0")}-first-frame${extension}`;
+}
+
 async function removeCurrentMedia(project, mediaUrlValue) {
   if (!mediaUrlValue) return;
   const fileName = basename(mediaFileNameFromUrl(mediaUrlValue));
@@ -346,6 +385,10 @@ function generationTask(project, item, type = "shot") {
   const referenceFileName = isCover && item.referenceUrl
     ? basename(decodeURIComponent(String(item.referenceUrl).split("/").pop() || ""))
     : "";
+  const firstFrameFileName = !isCover && item.firstFrameUrl
+    ? basename(decodeURIComponent(String(item.firstFrameUrl).split("/").pop() || ""))
+    : "";
+  const selectedModel = isCover ? null : resolveShotModel(project, item);
   return {
     taskId: item.generationTaskId,
     taskType: type,
@@ -366,12 +409,26 @@ function generationTask(project, item, type = "shot") {
     referenceImagePath: referenceFileName
       ? join(projectMediaDir(project.id), referenceFileName)
       : null,
+    firstFrameImagePath: firstFrameFileName
+      ? join(projectMediaDir(project.id), firstFrameFileName)
+      : null,
     status: item.generationStatus,
     generator: isCover ? "image-gen" : item.generator,
+    provider: selectedModel?.provider || "",
+    model: selectedModel?.model || "",
+    resolution: isCover ? "" : item.resolution || project.generation.resolution,
+    providerTaskId: isCover ? "" : item.providerTaskId,
+    providerStatus: isCover ? "" : item.providerStatus,
+    providerAttempts: isCover ? 0 : item.providerAttempts,
     mediaType: isCover ? "image" : item.mediaType,
     duration: isCover ? 0 : item.duration,
     dialogue: isCover ? item.title : item.dialogue,
     visualPrompt: isCover ? item.prompt : item.visualPrompt,
+    effectivePrompt: isCover ? item.prompt : buildGenerationPrompt({
+      stylePrompt: project.stylePrompt,
+      characterPrompt: project.characterPrompt,
+      shotPrompt: item.visualPrompt
+    }),
     notes: isCover ? "短视频封面" : item.notes,
     requestedAt: item.generationRequestedAt,
     startedAt: item.generationStartedAt,
@@ -604,6 +661,9 @@ async function handleProjectsApi(request, response, url) {
       id: createId("project"),
       title: body.title,
       aspectRatio: body.aspectRatio,
+      generation: body.generation,
+      stylePrompt: body.stylePrompt,
+      characterPrompt: body.characterPrompt,
       shots: []
     });
     return sendJson(response, 201, await saveProject(project));
@@ -671,7 +731,10 @@ async function handleProjectsApi(request, response, url) {
       title: body.title,
       aspectRatio: body.aspectRatio,
       covers: body.covers || current.covers,
-      shots: body.shots
+      shots: body.shots,
+      generation: body.generation || current.generation,
+      stylePrompt: body.stylePrompt ?? current.stylePrompt,
+      characterPrompt: body.characterPrompt ?? current.characterPrompt
     }));
   }
 
@@ -680,6 +743,9 @@ async function handleProjectsApi(request, response, url) {
     const body = await readBody(request);
     if (body.title !== undefined) project.title = String(body.title).trim() || project.title;
     if (body.aspectRatio !== undefined) project.aspectRatio = normalizeAspectRatio(body.aspectRatio);
+    if (body.generation !== undefined) project.generation = normalizeGenerationSettings(body.generation);
+    if (body.stylePrompt !== undefined) project.stylePrompt = String(body.stylePrompt);
+    if (body.characterPrompt !== undefined) project.characterPrompt = String(body.characterPrompt);
     return sendJson(response, 200, await saveProject(project));
   }
 
@@ -756,6 +822,40 @@ async function handleShotsApi(request, response, url) {
       shot.generationRequestedAt = null;
       shot.generationStartedAt = null;
       shot.generationCompletedAt = null;
+      return sendJson(response, 200, await saveProject(project));
+    }
+  }
+
+  const firstFrameMatch = url.pathname.match(
+    /^\/api\/projects\/([^/]+)\/shots\/([^/]+)\/first-frame$/
+  );
+  if (firstFrameMatch) {
+    const project = await readProject(decodeURIComponent(firstFrameMatch[1]));
+    const shot = project.shots.find((item) => item.id === decodeURIComponent(firstFrameMatch[2]));
+    if (!shot) return sendError(response, 404, "Shot not found");
+
+    if (request.method === "POST") {
+      const file = parseMultipart(
+        await readBodyBuffer(request, 21 * 1024 * 1024),
+        request.headers["content-type"] || ""
+      );
+      if (!file || !["image/png", "image/jpeg", "image/webp"].includes(file.mimeType)) {
+        return sendError(response, 400, "首帧仅支持 PNG、JPEG 或 WebP");
+      }
+      if (file.content.byteLength > 20 * 1024 * 1024) {
+        return sendError(response, 400, "首帧图片不能超过 20MB");
+      }
+      const extension = allowedUploads.get(file.mimeType);
+      if (shot.firstFrameUrl) await removeCurrentMedia(project, shot.firstFrameUrl);
+      const fileName = shotFirstFrameFileName(project, shot, extension);
+      await writeFile(join(projectMediaDir(project.id), fileName), file.content);
+      shot.firstFrameUrl = mediaUrl(project.id, fileName);
+      return sendJson(response, 200, await saveProject(project));
+    }
+
+    if (request.method === "DELETE") {
+      await removeCurrentMedia(project, shot.firstFrameUrl);
+      shot.firstFrameUrl = "";
       return sendJson(response, 200, await saveProject(project));
     }
   }
@@ -869,6 +969,15 @@ async function handleGenerationApi(request, response, url) {
           skipped.push({ shotId: shot.id, reason: "missing-prompt" });
           continue;
         }
+        const effectivePrompt = buildGenerationPrompt({
+          stylePrompt: project.stylePrompt,
+          characterPrompt: project.characterPrompt,
+          shotPrompt: shot.visualPrompt
+        });
+        if (shot.generator === "api-video" && effectivePrompt.length > 2000) {
+          skipped.push({ shotId: shot.id, reason: "prompt-too-long" });
+          continue;
+        }
         if (["pending", "processing"].includes(shot.generationStatus)) {
           skipped.push({ shotId: shot.id, reason: shot.generationStatus });
           continue;
@@ -884,6 +993,9 @@ async function handleGenerationApi(request, response, url) {
         shot.generationRequestedAt = new Date().toISOString();
         shot.generationStartedAt = null;
         shot.generationCompletedAt = null;
+        shot.providerTaskId = "";
+        shot.providerStatus = "";
+        shot.providerAttempts = 0;
         queued.push(generationTask(project, shot));
       }
     }
@@ -919,7 +1031,7 @@ async function handleGenerationApi(request, response, url) {
   }
 
   const taskMatch = url.pathname.match(
-    /^\/api\/generation\/tasks\/([^/]+)\/(claim|complete|fail|cancel)$/
+    /^\/api\/generation\/tasks\/([^/]+)\/(claim|provider|complete|fail|cancel)$/
   );
   if (taskMatch && request.method === "POST") {
     return mutateGenerationTask(async () => {
@@ -935,6 +1047,13 @@ async function handleGenerationApi(request, response, url) {
         }
         item.generationStatus = "processing";
         item.generationStartedAt = new Date().toISOString();
+      }
+
+      if (action === "provider") {
+        if (taskType === "cover") return sendError(response, 400, "封面任务不支持视频 Provider");
+        if (body.providerTaskId !== undefined) item.providerTaskId = String(body.providerTaskId);
+        if (body.providerStatus !== undefined) item.providerStatus = String(body.providerStatus);
+        if (body.incrementAttempt === true) item.providerAttempts += 1;
       }
 
       if (action === "complete") {
@@ -959,6 +1078,9 @@ async function handleGenerationApi(request, response, url) {
         item.generationRequestedAt = null;
         item.generationStartedAt = null;
         item.generationCompletedAt = item.mediaUrl ? item.generationCompletedAt : null;
+        item.providerTaskId = "";
+        item.providerStatus = "";
+        item.providerAttempts = 0;
       }
 
       const saved = await saveProject(project);
@@ -984,6 +1106,22 @@ async function handleApi(request, response, url) {
       dataDir,
       publicDir
     });
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/video-models") {
+    return sendJson(response, 200, { models: listVideoModels() });
+  }
+  if (url.pathname === "/api/settings/minimax") {
+    if (request.method === "GET") {
+      return sendJson(response, 200, { configured: Boolean(process.env.MINIMAX_API_KEY) });
+    }
+    if (request.method === "POST") {
+      const body = await readBody(request);
+      const apiKey = String(body.apiKey || "").trim();
+      if (!apiKey || apiKey.length > 4096) return sendError(response, 400, "MiniMax Key 无效");
+      await persistUserEnvironmentVariable("MINIMAX_API_KEY", apiKey);
+      return sendJson(response, 200, { configured: true, restartRequired: true });
+    }
   }
 
   if (await handleProjectsApi(request, response, url)) return;
