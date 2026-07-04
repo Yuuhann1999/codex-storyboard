@@ -1191,7 +1191,8 @@ function positionMenu(trigger, menu) {
     : Math.max(8, rect.top - menu.offsetHeight - gap);
   menu.style.left = `${Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8)}px`;
   menu.style.top = `${top}px`;
-  menu.style.width = `${Math.max(rect.width, 150)}px`;
+  const contentWidth = menu.scrollWidth || 120;
+  menu.style.width = `${Math.max(rect.width, Math.min(contentWidth + 10, 200))}px`;
 }
 
 function openSelect(trigger, field, shot, onChange) {
@@ -1553,7 +1554,6 @@ document.querySelector("#create-project").addEventListener("click", () => openPr
 document.querySelector("#brand-home").addEventListener("click", () => navigate("/"));
 document.querySelector("#back-home").addEventListener("click", () => navigate("/"));
 document.querySelector("#add-shot-top").addEventListener("click", addShot);
-document.querySelector("#add-shot-bottom").addEventListener("click", addShot);
 
 projectForm.addEventListener("submit", async (event) => {
   event.preventDefault();
