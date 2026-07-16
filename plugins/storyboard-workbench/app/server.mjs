@@ -12,6 +12,12 @@ import {
 } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { WorkspaceError } from "./lib/errors.mjs";
+import {
+  createWorkspace,
+  listRecentWorkspaces,
+  openWorkspace
+} from "./lib/workspace-repository.mjs";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 const args = parseArgs(process.argv.slice(2));
@@ -1261,18 +1267,45 @@ async function handleApi(request, response, url) {
   if (request.method === "GET" && url.pathname === "/api/health") {
     return sendJson(response, 200, {
       ok: true,
-      app: "codex-storyboard",
-      version: "0.5.4",
+      app: "storyboard-workbench",
+      version: "0.1.0",
       dataDir,
       publicDir
     });
   }
 
+  if (await handleWorkspacesApi(request, response, url)) return;
   if (await handleProjectsApi(request, response, url)) return;
   if (await handleShotsApi(request, response, url)) return;
   if (await handleCoversApi(request, response, url)) return;
   if (await handleGenerationApi(request, response, url)) return;
   return sendError(response, 404, "API not found");
+}
+
+async function handleWorkspacesApi(request, response, url) {
+  if (request.method === "GET" && url.pathname === "/api/workspaces") {
+    return sendJson(response, 200, {
+      projects: await listRecentWorkspaces(dataDir)
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/workspaces") {
+    const body = await readBody(request);
+    const project = await createWorkspace(body.root, {
+      title: body.title,
+      aspectRatio: body.aspectRatio,
+      configDir: dataDir
+    });
+    return sendJson(response, 201, { root: resolve(body.root), project });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/workspaces/open") {
+    const body = await readBody(request);
+    const project = await openWorkspace(body.root, { configDir: dataDir });
+    return sendJson(response, 200, { root: resolve(body.root), project });
+  }
+
+  return false;
 }
 
 const server = createServer(async (request, response) => {
@@ -1297,7 +1330,7 @@ const server = createServer(async (request, response) => {
     }
     return await serveFile(response, join(publicDir, decodeURIComponent(url.pathname.slice(1))));
   } catch (error) {
-    const status = error.status || 500;
+    const status = error instanceof WorkspaceError ? error.status : (error.status || 500);
     if (status >= 500) console.error(error);
     return sendError(response, status, error.message || "Internal server error");
   }
