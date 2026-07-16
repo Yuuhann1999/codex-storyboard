@@ -6,6 +6,6 @@
   "scripts": {
     "start": "node server.mjs --data-dir ./data",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check server.mjs && node --check public/app.js && node --check plugins/storyboard-workbench/mcp/server.mjs && node --check plugins/storyboard-workbench/app/server.mjs && node --check plugins/storyboard-workbench/app/public/app.js"
+    "check": "node --check server.mjs && node --check plugins/storyboard-workbench/mcp/server.mjs && node --check plugins/storyboard-workbench/app/server.mjs && node --check plugins/storyboard-workbench/app/public/app.js && node --check plugins/storyboard-workbench/app/lib/atomic-json.mjs && node --check plugins/storyboard-workbench/app/lib/path-safety.mjs && node --check plugins/storyboard-workbench/app/lib/project-schema.mjs && node --check plugins/storyboard-workbench/app/lib/workspace-repository.mjs"
   }
 }
