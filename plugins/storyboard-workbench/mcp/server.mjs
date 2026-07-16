@@ -6,15 +6,15 @@ import net from "node:net";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SERVER_NAME = "Codex Storyboard MCP";
-const SERVER_VERSION = "0.5.4";
-const DEFAULT_URL = "http://127.0.0.1:43218";
+const SERVER_NAME = "Storyboard Workbench MCP";
+const SERVER_VERSION = "0.1.0";
+const DEFAULT_URL = "http://127.0.0.1:43219";
 const ASPECT_RATIOS = ["9:16", "16:9", "3:4", "4:3", "1:1"];
 const pluginRoot = fileURLToPath(new URL("..", import.meta.url));
 const bundledServer = join(pluginRoot, "app", "server.mjs");
-const defaultDataDir = process.env.CODEX_STORYBOARD_DATA_DIR ||
-  process.env.CODEX_STORYBOARD_HOME ||
-  join(homedir(), ".codex-storyboard");
+const defaultDataDir = process.env.STORYBOARD_WORKBENCH_DATA_DIR ||
+  process.env.STORYBOARD_WORKBENCH_HOME ||
+  join(homedir(), ".storyboard-workbench");
 let storyboardProcess;
 
 const JsonRpcError = {
@@ -35,7 +35,7 @@ function sendError(id, code, message) {
 }
 
 function storyboardUrl(args = {}) {
-  return String(args.storyboardUrl || process.env.CODEX_STORYBOARD_URL || DEFAULT_URL).replace(/\/+$/, "");
+  return String(args.storyboardUrl || process.env.STORYBOARD_WORKBENCH_URL || DEFAULT_URL).replace(/\/+$/, "");
 }
 
 async function portAvailable(port) {
@@ -71,14 +71,14 @@ async function health(url, timeoutMs = 800) {
 }
 
 async function ensureStoryboard(args = {}) {
-  const explicitUrl = args.storyboardUrl || process.env.CODEX_STORYBOARD_URL;
+  const explicitUrl = args.storyboardUrl || process.env.STORYBOARD_WORKBENCH_URL;
   if (explicitUrl) {
     const url = String(explicitUrl).replace(/\/+$/, "");
     const info = await health(url, 1500);
     return { url, alreadyRunning: true, dataDir: info.dataDir };
   }
 
-  const requestedPort = Number(args.port || process.env.CODEX_STORYBOARD_PORT || 43218);
+  const requestedPort = Number(args.port || process.env.STORYBOARD_WORKBENCH_PORT || 43219);
   const expectedUrl = `http://127.0.0.1:${requestedPort}`;
   try {
     const info = await health(expectedUrl);
@@ -105,8 +105,8 @@ async function ensureStoryboard(args = {}) {
     detached: true,
     env: {
       ...process.env,
-      CODEX_STORYBOARD_PORT: String(port),
-      CODEX_STORYBOARD_DATA_DIR: dataDir,
+      STORYBOARD_WORKBENCH_PORT: String(port),
+      STORYBOARD_WORKBENCH_DATA_DIR: dataDir,
       NODE_ENV: "production"
     },
     stdio: "ignore"
@@ -114,7 +114,7 @@ async function ensureStoryboard(args = {}) {
 
   storyboardProcess.once("exit", (code) => {
     if (code !== 0 && code !== null) {
-      process.stderr.write(`[codex-storyboard] app service exited with code ${code}\n`);
+      process.stderr.write(`[storyboard-workbench] app service exited with code ${code}\n`);
     }
     storyboardProcess = undefined;
   });
@@ -131,7 +131,7 @@ async function ensureStoryboard(args = {}) {
 }
 
 async function requestJson(path, options = {}, args = {}) {
-  const base = args.storyboardUrl || process.env.CODEX_STORYBOARD_URL
+  const base = args.storyboardUrl || process.env.STORYBOARD_WORKBENCH_URL
     ? storyboardUrl(args)
     : (await ensureStoryboard(args)).url;
   const response = await fetch(`${base}${path}`, options);
@@ -216,10 +216,10 @@ function tools() {
       inputSchema: {
         type: "object",
         properties: {
-          port: { type: "number", description: "Preferred local port. Defaults to 43218." },
+          port: { type: "number", description: "Preferred local port. Defaults to 43219." },
           dataDir: {
             type: "string",
-            description: "Optional local data directory. Defaults to ~/.codex-storyboard."
+            description: "Optional local data directory. Defaults to ~/.storyboard-workbench."
           },
           storyboardUrl: {
             type: "string",
@@ -491,7 +491,7 @@ async function callTool(id, params) {
 
   if (params?.name === "create_storyboard_project") {
     let project;
-    const serviceUrl = args.storyboardUrl || process.env.CODEX_STORYBOARD_URL
+    const serviceUrl = args.storyboardUrl || process.env.STORYBOARD_WORKBENCH_URL
       ? storyboardUrl(args)
       : (await ensureStoryboard(args)).url;
     const requestArgs = { ...args, storyboardUrl: serviceUrl };

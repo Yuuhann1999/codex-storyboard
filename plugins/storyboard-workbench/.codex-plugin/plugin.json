@@ -1,0 +1,28 @@
+{
+  "name": "storyboard-workbench",
+  "version": "0.1.0",
+  "description": "Local-first storyboard workbench foundation with user-selected project directories and a versioned project schema.",
+  "author": {
+    "name": "Local extension based on Yuuhann/codex-storyboard"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Storyboard Workbench",
+    "shortDescription": "Create storyboard projects in user-selected local directories.",
+    "longDescription": "Storyboard Workbench extends Codex Storyboard with user-selected local project directories, a versioned project schema, safe local paths, and atomic persistence.",
+    "developerName": "Local Storyboard Workbench",
+    "category": "Productivity",
+    "brandColor": "#0AA6BD",
+    "capabilities": [
+      "User-selected local project directories",
+      "Versioned local project schema",
+      "Safe atomic project persistence",
+      "Existing storyboard and media tools"
+    ],
+    "defaultPrompt": [
+      "Open Storyboard Workbench.",
+      "Create a storyboard project in my selected local directory."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}
