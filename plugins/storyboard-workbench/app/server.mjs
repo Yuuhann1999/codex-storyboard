@@ -15,18 +15,18 @@ import { fileURLToPath } from "node:url";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 const args = parseArgs(process.argv.slice(2));
-const publicDir = resolve(args.publicDir || process.env.CODEX_STORYBOARD_PUBLIC_DIR || join(rootDir, "public"));
+const publicDir = resolve(args.publicDir || process.env.STORYBOARD_WORKBENCH_PUBLIC_DIR || join(rootDir, "public"));
 const dataDir = resolve(
   args.dataDir ||
-  process.env.CODEX_STORYBOARD_DATA_DIR ||
-  process.env.CODEX_STORYBOARD_HOME ||
-  join(homedir(), ".codex-storyboard")
+  process.env.STORYBOARD_WORKBENCH_DATA_DIR ||
+  process.env.STORYBOARD_WORKBENCH_HOME ||
+  join(homedir(), ".storyboard-workbench")
 );
 const projectsDir = join(dataDir, "projects");
 const projectsFile = join(dataDir, "projects.json");
 const legacyDataFile = join(dataDir, "storyboard.json");
 const legacyMediaDir = join(dataDir, "media");
-const port = Number(args.port || process.env.PORT || process.env.CODEX_STORYBOARD_PORT || 43218);
+const port = Number(args.port || process.env.PORT || process.env.STORYBOARD_WORKBENCH_PORT || 43219);
 let generationMutationQueue = Promise.resolve();
 
 const aspectRatios = {

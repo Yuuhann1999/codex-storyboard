@@ -1,14 +1,14 @@
 {
-  "name": "codex-storyboard",
+  "name": "storyboard-workbench",
   "interface": {
-    "displayName": "Codex Storyboard"
+    "displayName": "Storyboard Workbench"
   },
   "plugins": [
     {
-      "name": "codex-storyboard",
+      "name": "storyboard-workbench",
       "source": {
         "source": "local",
-        "path": "./plugins/codex-storyboard"
+        "path": "./plugins/storyboard-workbench"
       },
       "policy": {
         "installation": "AVAILABLE",
