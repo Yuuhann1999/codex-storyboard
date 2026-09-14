@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL(".", import.meta.url));
@@ -45,7 +46,20 @@ export const python = process.env.CODEX_STORYBOARD_PYTHON || (existsSync(venvPyt
 export const ffmpeg = process.env.CODEX_STORYBOARD_FFMPEG || localBinary("ffmpeg/bin/ffmpeg.exe") || findWindowsBinary("ffmpeg.exe") || "ffmpeg";
 export const ffprobe = process.env.CODEX_STORYBOARD_FFPROBE || localBinary("ffmpeg/bin/ffprobe.exe") || findWindowsBinary("ffprobe.exe") || "ffprobe";
 export const whisper = process.env.CODEX_STORYBOARD_WHISPER || localBinary("whisper/whisper-cli.exe") || "whisper-cli";
-export const whisperModel = process.env.CODEX_STORYBOARD_WHISPER_MODEL || join(runtimeHome, "ggml-large-v3-turbo-q5_0.bin");
+export function findWhisperModel(options = {}) {
+  const configured = String(options.configured ?? process.env.CODEX_STORYBOARD_WHISPER_MODEL ?? "").trim();
+  if (configured) return configured;
+  const runtimePath = options.runtimeHome || runtimeHome;
+  const home = options.home || homedir();
+  const candidates = [
+    join(runtimePath, "ggml-large-v3-turbo-q5_0.bin"),
+    join(runtimePath, "ggml-large-v3-turbo.bin"),
+    join(home, ".cache", "dsh-whisper", "ggml-large-v3-turbo.bin"),
+    join(home, ".cache", "dsh-whisper", "ggml-large-v3.bin")
+  ];
+  return candidates.find(candidate => existsSync(candidate)) || candidates[0];
+}
+export const whisperModel = findWhisperModel();
 export async function inspectEnvironment() {
   const checks = [{ name: "Node.js", status: "ready", detail: process.version }];
   for (const [name, command, args] of [

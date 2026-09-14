@@ -2159,6 +2159,7 @@ function renderVoice() {
   const take = takeIndex >= 0 ? takes[takeIndex] : null;
   const currentMeta = document.querySelector("#voice-current-meta");
   const busy = ["generating", "aligning"].includes(audio.status);
+  const hasSpokenShots = Array.isArray(project?.shots) && project.shots.some(shot => String(shot.dialogue || "").trim());
   const status = document.querySelector("#voice-status");
   status.textContent = ({ generating: "生成中", aligning: "对齐中", ready: "已就绪", failed: "需要处理" })[audio.status] || "未生成";
   status.dataset.status = audio.status || "idle";
@@ -2183,12 +2184,16 @@ function renderVoice() {
     : "尚未生成配音";
   document.querySelector("#voice-error").textContent = audio.error || "";
   document.querySelector("#voice-generate").disabled = busy;
-  document.querySelector("#voice-align").disabled = busy || !take;
+  document.querySelector("#voice-align").disabled = busy || !take || !hasSpokenShots;
   document.querySelector("#voice-apply").disabled = busy || !take?.timeline?.length;
   document.querySelector("#timing-note").hidden = false;
-  document.querySelector("#timing-note").textContent = take?.alignEngine?.startsWith("whisper")
-    ? "Whisper 已完成本地识别，可试听后微调时间。无台词镜头保留原时长。"
-    : take ? "尚未完成识别对齐，请先点击“识别并对齐”。" : "生成配音后，可识别台词并调整镜头时长。";
+  document.querySelector("#timing-note").textContent = !take
+    ? "生成配音后，可识别台词并调整镜头时长。"
+    : !hasSpokenShots
+      ? "当前项目没有带台词的镜头，无法进行对齐；请先在分镜中填写台词。"
+      : take.alignEngine?.startsWith("whisper")
+        ? "Whisper 已完成本地识别，可试听后微调时间。无台词镜头保留原时长。"
+        : "尚未完成识别对齐，请先点击“识别并对齐”。";
   document.querySelector("#voice-timeline").replaceChildren(...(take?.timeline || []).map(segment => {
     const row = document.createElement("div"); row.className = "timing-row"; row.dataset.shotId = segment.shotId;
     const text = document.createElement("span"); text.textContent = segment.text;

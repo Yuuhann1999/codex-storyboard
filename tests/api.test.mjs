@@ -77,6 +77,14 @@ test("project persistence, conflict detection, generation cancellation and recov
     assert.ok(audio.error);
     const blocked = await fetch(`http://127.0.0.1:${port}${path}/audio/generate`, { method: "POST", headers: { origin: "https://untrusted.example", "content-type": "application/json" }, body: "{}" });
     assert.equal(blocked.status, 403);
+    const scriptOnly = JSON.parse(await readFile(file, "utf8"));
+    scriptOnly.shots = [];
+    scriptOnly.scriptDraft = "hello";
+    scriptOnly.audio = { takes: [{ id: "take-script", fileName: "take.wav", text: "hello", durationMs: 1000 }], selectedId: "take-script", status: "ready" };
+    await writeFile(file, JSON.stringify(scriptOnly));
+    const scriptOnlyAlign = await request(`${path}/audio/align`, "POST", {});
+    assert.equal(scriptOnlyAlign.status, 409);
+    assert.equal(scriptOnlyAlign.data.error, "当前项目没有带台词的镜头，无法进行对齐");
   } finally {
     child.kill(); await stopped;
     await rm(directory, { recursive: true, force: true });

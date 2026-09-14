@@ -167,6 +167,10 @@ function safeId(value) {
   return /^[a-zA-Z0-9_-]+$/.test(value);
 }
 
+function projectVoiceText(project) {
+  return spokenText(project.shots) || project.scriptDraft.trim();
+}
+
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -1408,7 +1412,8 @@ async function handleApi(request, response, url) {
         take.appliedAt = new Date().toISOString();
         return sendJson(response, 200, await saveProject(project));
       }
-      if (spokenText(project.shots) !== take.text) return sendError(response, 409, "当前镜头台词与此配音文本不同，请重新生成配音后对齐");
+      if (!spokenText(project.shots)) return sendError(response, 409, "当前项目没有带台词的镜头，无法进行对齐");
+      if (projectVoiceText(project) !== take.text) return sendError(response, 409, "当前镜头台词与此配音文本不同，请重新生成配音后对齐");
       audioJobs.add(projectId);
       project.audio.status = "aligning";
       project.audio.error = "";
@@ -1437,7 +1442,7 @@ async function handleApi(request, response, url) {
       project.audio.selectedId = body.takeId;
       return sendJson(response, 200, await saveProject(project));
     }
-    const text = project.shots.map(shot => shot.dialogue.trim()).filter(Boolean).join("\n") || project.scriptDraft.trim();
+    const text = projectVoiceText(project);
     if (!text || text.length > 10000) return sendError(response, 400, "请填写台词或脚本，最多 10000 字");
     const id = createId("voice");
     const instruction = String(body.instruction || "").slice(0, 1000);
