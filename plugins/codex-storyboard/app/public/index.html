@@ -262,14 +262,15 @@
           <span id="voice-status" class="voice-status-chip"></span>
         </summary>
         <div class="voice-content">
-          <section class="voice-section voice-current-section">
+          <section class="voice-section voice-versions-section">
             <div class="voice-section-heading">
               <div>
-                <h2>当前版本</h2>
+                <h2>配音版本</h2>
                 <p id="voice-current-meta">尚未生成配音</p>
               </div>
-              <audio id="voice-player" controls hidden></audio>
+              <span id="voice-version-count" class="voice-version-count" aria-live="polite">暂无</span>
             </div>
+            <div id="voice-takes" class="voice-take-list"></div>
             <p id="voice-error" class="voice-error" role="status"></p>
           </section>
           <section class="voice-section voice-compose-section">
@@ -296,16 +297,8 @@
                 <button id="voice-apply" class="secondary" type="button">应用镜头时长</button>
               </div>
             </div>
-            <details id="recognition-details" hidden class="voice-recognition-details">
-              <summary>查看识别原文</summary>
-              <div id="recognition-text"></div>
-            </details>
             <div id="voice-timeline"></div>
           </section>
-          <details class="voice-versions voice-section">
-            <summary>其他版本 <span id="voice-version-count"></span></summary>
-            <div id="voice-takes"></div>
-          </details>
         </div>
       </details>
     </section>

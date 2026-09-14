@@ -852,6 +852,17 @@ function showProjectsView() {
   return loadProjects();
 }
 
+function syncStoryboardViewport() {
+  const root = document.documentElement;
+  if (storyboardView.hidden || !window.matchMedia("(max-width: 1180px)").matches) {
+    root.style.removeProperty("--storyboard-topbar-height");
+    return;
+  }
+  const topbar = document.querySelector(".topbar");
+  const height = Math.ceil(topbar?.getBoundingClientRect().height || 160);
+  root.style.setProperty("--storyboard-topbar-height", `${height}px`);
+}
+
 function showStoryboardView(projectId) {
   projectsView.hidden = true;
   stylesView.hidden = true;
@@ -859,6 +870,8 @@ function showStoryboardView(projectId) {
   storyboardView.hidden = false;
   document.querySelector("#home-actions").hidden = true;
   document.querySelector("#storyboard-actions").hidden = false;
+  syncStoryboardViewport();
+  requestAnimationFrame(syncStoryboardViewport);
   return loadProject(projectId);
 }
 
@@ -873,6 +886,7 @@ function showHomeTab(tab) {
   storyboardView.hidden = true;
   document.querySelector("#home-actions").hidden = false;
   document.querySelector("#storyboard-actions").hidden = true;
+  syncStoryboardViewport();
   document.title = "Codex 分镜台";
   if (tab === "styles") loadStylesView();
 }
@@ -2027,18 +2041,16 @@ function startPolling() {
 renderRatioOptions();
 function renderVoice() {
   const audio = project?.audio || { takes: [] };
-  const take = audio.takes.find(item => item.id === audio.selectedId);
-  const player = document.querySelector("#voice-player");
+  const takes = Array.isArray(audio.takes) ? audio.takes : [];
+  const takeIndex = takes.findIndex(item => item.id === audio.selectedId);
+  const take = takeIndex >= 0 ? takes[takeIndex] : null;
   const currentMeta = document.querySelector("#voice-current-meta");
-  player.hidden = !take;
-  if (take && player.getAttribute("src") !== take.url) player.src = take.url;
-  if (!take) player.removeAttribute("src");
   const busy = ["generating", "aligning"].includes(audio.status);
   const status = document.querySelector("#voice-status");
   status.textContent = ({ generating: "生成中", aligning: "对齐中", ready: "已就绪", failed: "需要处理" })[audio.status] || "未生成";
   status.dataset.status = audio.status || "idle";
   currentMeta.textContent = take
-    ? `${(take.durationMs / 1000).toFixed(2)} 秒 · ${take.alignEngine?.startsWith("whisper") ? "已完成本地识别" : "尚未对齐"}`
+    ? `当前使用 · 版本 ${String(takeIndex + 1).padStart(2, "0")} · ${(take.durationMs / 1000).toFixed(2)} 秒`
     : "尚未生成配音";
   document.querySelector("#voice-error").textContent = audio.error || "";
   document.querySelector("#voice-generate").disabled = busy;
@@ -2048,8 +2060,6 @@ function renderVoice() {
   document.querySelector("#timing-note").textContent = take?.alignEngine?.startsWith("whisper")
     ? "Whisper 已完成本地识别，可试听后微调时间。无台词镜头保留原时长。"
     : take ? "尚未完成识别对齐，请先点击“识别并对齐”。" : "生成配音后，可识别台词并调整镜头时长。";
-  document.querySelector("#recognition-details").hidden = !take?.recognition?.length;
-  document.querySelector("#recognition-text").textContent = (take?.recognition || []).map(s => `${(s.start / 1000).toFixed(2)}–${(s.end / 1000).toFixed(2)} 秒：${s.text}`).join("\n");
   document.querySelector("#voice-timeline").replaceChildren(...(take?.timeline || []).map(segment => {
     const row = document.createElement("div"); row.className = "timing-row"; row.dataset.shotId = segment.shotId;
     const text = document.createElement("span"); text.textContent = segment.text;
@@ -2062,16 +2072,48 @@ function renderVoice() {
     }
     return row;
   }));
-  document.querySelector("#voice-version-count").textContent = audio.takes.length ? `${audio.takes.length} 个` : "暂无";
-  document.querySelector("#voice-takes").replaceChildren(...audio.takes.map((item, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "voice-take-option";
-    button.setAttribute("aria-pressed", String(item.id === audio.selectedId));
-    button.textContent = `版本 ${index + 1} · ${(item.durationMs / 1000).toFixed(1)} 秒${item.id === audio.selectedId ? " · 当前版本" : ""}`;
-    button.disabled = busy || item.id === audio.selectedId;
-    button.addEventListener("click", () => voiceAction("select", { takeId: item.id }));
-    return button;
+  document.querySelector("#voice-version-count").textContent = takes.length ? `${takes.length} 条` : "暂无";
+  const versionList = document.querySelector("#voice-takes");
+  if (!takes.length) {
+    const empty = document.createElement("p");
+    empty.className = "voice-take-empty";
+    empty.textContent = "生成第一条配音后，所有版本都会集中显示在这里。";
+    versionList.replaceChildren(empty);
+    return;
+  }
+  versionList.replaceChildren(...takes.map((item, index) => {
+    const selected = item.id === audio.selectedId;
+    const card = document.createElement("article");
+    card.className = "voice-take-card";
+    card.dataset.selected = String(selected);
+
+    const header = document.createElement("div");
+    header.className = "voice-take-header";
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `版本 ${String(index + 1).padStart(2, "0")}`;
+    const meta = document.createElement("span");
+    meta.textContent = `${(item.durationMs / 1000).toFixed(2)} 秒 · ${item.alignEngine?.startsWith("whisper") ? "已对齐" : "未对齐"}`;
+    copy.append(title, meta);
+    const choose = document.createElement("button");
+    choose.type = "button";
+    choose.className = selected ? "voice-take-selected" : "voice-take-select";
+    choose.textContent = selected ? "当前使用" : "使用此版本";
+    choose.disabled = busy || selected;
+    choose.setAttribute("aria-pressed", String(selected));
+    choose.addEventListener("click", () => voiceAction("select", { takeId: item.id }));
+    header.append(copy, choose);
+    card.append(header);
+
+    if (item.url) {
+      const player = document.createElement("audio");
+      player.controls = true;
+      player.preload = "metadata";
+      player.src = item.url;
+      player.setAttribute("aria-label", `试听配音版本 ${index + 1}`);
+      card.append(player);
+    }
+    return card;
   }));
 }
 async function voiceAction(action, payload = {}) {
@@ -2340,7 +2382,10 @@ document.addEventListener("pointerdown", (event) => {
   if (activeSelect.menu.contains(event.target) || activeSelect.trigger.contains(event.target)) return;
   closeSelect();
 });
-window.addEventListener("resize", () => closeSelect());
+window.addEventListener("resize", () => {
+  closeSelect();
+  syncStoryboardViewport();
+});
 document.querySelector(".table-shell").addEventListener("scroll", () => closeSelect(), { passive: true });
 window.addEventListener("popstate", async () => {
   try { await flushSave(); await route(); }
