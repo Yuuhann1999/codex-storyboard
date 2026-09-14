@@ -1,7 +1,7 @@
 {
   "name": "codex-storyboard",
-  "version": "0.5.4",
-  "description": "Start the local storyboard app, create and manage projects, process image and video generation tasks, and return assets to Codex Storyboard.",
+  "version": "0.6.0+codex.20260914090401",
+  "description": "Start the local storyboard app, create and manage projects, plan B-roll motion with a confirmation gate, process image and video generation tasks, and return assets to Codex Storyboard.",
   "author": {
     "name": "Yuuhann"
   },
@@ -25,6 +25,7 @@
       "Image generation routing",
       "HyperFrames video routing",
       "Remotion video routing",
+      "B-roll motion planning and confirmation gate",
       "Automatic local asset return"
     ],
     "defaultPrompt": [

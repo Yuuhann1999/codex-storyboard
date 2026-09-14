@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import readline from "node:readline";
 import net from "node:net";
@@ -7,9 +7,16 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SERVER_NAME = "Codex Storyboard MCP";
-const SERVER_VERSION = "0.5.4";
+const SERVER_VERSION = "0.6.0";
 const DEFAULT_URL = "http://127.0.0.1:43218";
 const ASPECT_RATIOS = ["9:16", "16:9", "3:4", "4:3", "1:1"];
+const BROLL_PLAN_FILE = "broll-plan.json";
+const BROLL_TYPES = ["有素材", "无素材", "纯文字"];
+const BROLL_SEMANTIC_STRUCTURES = ["对比", "聚合", "筛选", "层级", "因果", "替换", "展开"];
+const BROLL_REFERENCE_REPOSITORIES = [
+  "https://github.com/heygen-com/hyperframes-launches",
+  "https://github.com/Vincentwei1021/video-shotcraft"
+];
 const pluginRoot = fileURLToPath(new URL("..", import.meta.url));
 const bundledServer = join(pluginRoot, "app", "server.mjs");
 const defaultDataDir = process.env.CODEX_STORYBOARD_DATA_DIR ||
@@ -145,6 +152,132 @@ function jsonOptions(body, method = "POST") {
     method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
+  };
+}
+
+function isMotionBrollTask(task) {
+  return task?.taskType === "shot" &&
+    task.rollType === "B-ROLL" &&
+    ["hyperframes", "remotion"].includes(task.generator);
+}
+
+function brollPlanPath(task) {
+  return join(task.outputDir, BROLL_PLAN_FILE);
+}
+
+async function findGenerationTask(taskId, args) {
+  const result = await requestJson(
+    "/api/generation/tasks?status=pending%2Cprocessing%2Cready%2Cfailed",
+    {},
+    args
+  );
+  const task = result.tasks.find((candidate) => candidate.taskId === taskId);
+  if (!task) throw new Error(`Generation task not found: ${taskId}`);
+  return task;
+}
+
+async function readBrollPlan(task) {
+  try {
+    return JSON.parse(await readFile(brollPlanPath(task), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+async function requireConfirmedBrollPlan(task) {
+  if (!isMotionBrollTask(task)) return null;
+  const plan = await readBrollPlan(task);
+  if (plan?.status !== "confirmed") {
+    throw new Error(
+      `B-roll 动效任务 ${task.taskId} 必须先调用 plan_broll_motion，向用户展示候选方案并获得确认后再次提交 approval=confirmed；当前不能领取或完成。`
+    );
+  }
+  return plan;
+}
+
+function stringList(value) {
+  return Array.isArray(value)
+    ? [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))]
+    : [];
+}
+
+function mergePlanList(next, previous) {
+  return stringList(next).length > 0 ? stringList(next) : stringList(previous);
+}
+
+async function planBrollMotion(args) {
+  const task = await findGenerationTask(args.taskId, args);
+  if (task.taskType !== "shot" || task.rollType !== "B-ROLL") {
+    throw new Error("plan_broll_motion 只接受 B-ROLL 分镜任务。");
+  }
+  if (task.generator === "manual") {
+    throw new Error("manual 分镜不进入 B-roll 动效生成流程。");
+  }
+
+  const previous = await readBrollPlan(task) || {};
+  const approval = args.approval || "proposed";
+  const reviewedSources = mergePlanList(args.reviewedSources, previous.reviewedSources);
+  const localTemplateRoots = mergePlanList(args.localTemplateRoots, previous.localTemplateRoots);
+  const plan = {
+    schemaVersion: 1,
+    tool: "plan_broll_motion",
+    taskId: task.taskId,
+    projectId: task.projectId,
+    shotId: task.shotId,
+    shotIndex: task.shotIndex,
+    durationMs: Math.round(Number(task.duration || 0) * 1000),
+    dialogue: task.dialogue || "",
+    visualPrompt: task.visualPrompt || "",
+    generator: task.generator,
+    brollType: args.brollType || previous.brollType || "无素材",
+    semanticStructure: args.semanticStructure || previous.semanticStructure || "展开",
+    audienceTakeaway: args.audienceTakeaway || previous.audienceTakeaway || "",
+    localTemplateRoots,
+    referenceRepositories: BROLL_REFERENCE_REPOSITORIES,
+    reviewedSources,
+    sources: Array.isArray(args.sources) ? args.sources : (previous.sources || []),
+    selectedTemplate: args.selectedTemplate || previous.selectedTemplate || "",
+    motionSkeleton: args.motionSkeleton || previous.motionSkeleton || "",
+    uiChanges: args.uiChanges || previous.uiChanges || "",
+    researchNotes: args.researchNotes || previous.researchNotes || "",
+    researchComplete: args.researchComplete === true || previous.researchComplete === true,
+    status: approval,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (!BROLL_TYPES.includes(plan.brollType)) {
+    throw new Error(`brollType 必须是：${BROLL_TYPES.join("、")}`);
+  }
+  if (!BROLL_SEMANTIC_STRUCTURES.includes(plan.semanticStructure)) {
+    throw new Error(`semanticStructure 必须是：${BROLL_SEMANTIC_STRUCTURES.join("、")}`);
+  }
+  if (!['proposed', 'confirmed'].includes(plan.status)) {
+    throw new Error("approval 必须是 proposed 或 confirmed。");
+  }
+
+  if (plan.status === "confirmed") {
+    const missingRepositories = BROLL_REFERENCE_REPOSITORIES.filter(
+      (repository) => !plan.reviewedSources.some((source) => source.includes(repository))
+    );
+    if (!plan.researchComplete) {
+      throw new Error("确认 B-roll 方案前必须完成本地模板和参考素材检查，并设置 researchComplete=true。");
+    }
+    if (missingRepositories.length > 0) {
+      throw new Error(`确认 B-roll 方案前必须查看并记录两个指定开源仓库：${missingRepositories.join("、")}`);
+    }
+    if (!plan.selectedTemplate || !plan.motionSkeleton || !plan.uiChanges) {
+      throw new Error("确认 B-roll 方案前必须填写 selectedTemplate、motionSkeleton 和 uiChanges。");
+    }
+  }
+
+  await mkdir(task.outputDir, { recursive: true });
+  await writeFile(brollPlanPath(task), `${JSON.stringify(plan, null, 2)}\n`, "utf8");
+  return {
+    plan,
+    readyForImplementation: plan.status === "confirmed",
+    nextStep: plan.status === "confirmed"
+      ? "方案已确认，现在可以领取任务并按选定骨架实现。"
+      : "先把本方案展示给用户；用户确认后，用同一个 taskId 再次调用并设置 approval=confirmed。"
   };
 }
 
@@ -390,9 +523,58 @@ function tools() {
       }
     },
     {
+      name: "plan_broll_motion",
+      title: "Plan B-roll Motion",
+      description: "强制规划 B-roll 动效。先检查本地模板，再记录两个指定开源仓库和可用的 GIF/视频来源，向用户展示候选骨架；只有 approval=confirmed 的方案才能领取或完成 HyperFrames/Remotion B-roll 任务。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          taskId: { type: "string" },
+          brollType: { type: "string", enum: BROLL_TYPES },
+          semanticStructure: { type: "string", enum: BROLL_SEMANTIC_STRUCTURES },
+          audienceTakeaway: { type: "string" },
+          localTemplateRoots: { type: "array", items: { type: "string" } },
+          reviewedSources: {
+            type: "array",
+            items: { type: "string" },
+            description: "已实际查看的本地模板或网络仓库/帖子 URL；确认时必须包含两个指定开源仓库。"
+          },
+          sources: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                kind: { type: "string" },
+                url: { type: "string" },
+                mediaType: { type: "string" },
+                localPath: { type: "string" },
+                licenseNote: { type: "string" }
+              },
+              additionalProperties: true
+            }
+          },
+          selectedTemplate: { type: "string" },
+          motionSkeleton: { type: "string" },
+          uiChanges: { type: "string" },
+          researchNotes: { type: "string" },
+          researchComplete: { type: "boolean" },
+          approval: { type: "string", enum: ["proposed", "confirmed"], default: "proposed" },
+          storyboardUrl: { type: "string" }
+        },
+        required: ["taskId"],
+        additionalProperties: false
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true
+      }
+    },
+    {
       name: "claim_storyboard_generation_task",
       title: "Claim Storyboard Generation Task",
-      description: "Mark a pending storyboard task as processing before starting Image Generation, HyperFrames, or Remotion work.",
+      description: "Mark a pending storyboard task as processing. HyperFrames/Remotion B-roll is blocked until plan_broll_motion has been confirmed by the user.",
       inputSchema: {
         type: "object",
         properties: {
@@ -412,7 +594,7 @@ function tools() {
     {
       name: "complete_storyboard_generation_task",
       title: "Complete Storyboard Generation Task",
-      description: "Copy a generated local image or video into the storyboard media directory and mark the task ready.",
+      description: "Copy a generated local image or video into the storyboard media directory and mark the task ready. Confirmed B-roll motion plans are checked again before completion.",
       inputSchema: {
         type: "object",
         properties: {
@@ -657,7 +839,18 @@ async function callTool(id, params) {
     return;
   }
 
+  if (params?.name === "plan_broll_motion") {
+    const result = await planBrollMotion(args);
+    sendResult(id, {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: result
+    });
+    return;
+  }
+
   if (params?.name === "claim_storyboard_generation_task") {
+    const task = await findGenerationTask(args.taskId, args);
+    await requireConfirmedBrollPlan(task);
     const result = await requestJson(
       `/api/generation/tasks/${encodeURIComponent(args.taskId)}/claim`,
       jsonOptions({}),
@@ -671,6 +864,8 @@ async function callTool(id, params) {
   }
 
   if (params?.name === "complete_storyboard_generation_task") {
+    const task = await findGenerationTask(args.taskId, args);
+    await requireConfirmedBrollPlan(task);
     const result = await requestJson(
       `/api/generation/tasks/${encodeURIComponent(args.taskId)}/complete`,
       jsonOptions({ sourcePath: args.sourcePath, mediaType: args.mediaType }),
@@ -713,7 +908,7 @@ async function handle(message) {
       capabilities: { tools: {} },
       serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
       instructions:
-        "Use project tools to create and manage storyboard projects directly through the local API. Use generation tools to process queued assets. Never edit data files directly or complete a generation task before verifying its output."
+        "Use project tools to create and manage storyboard projects directly through the local API. Use generation tools to process queued assets. For HyperFrames/Remotion B-roll, call plan_broll_motion, show the proposed motion plan to the user, and wait for approval before claiming or completing the task. Never edit project data files directly or complete a generation task before verifying its output."
     });
     return;
   }
