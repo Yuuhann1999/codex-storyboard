@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { expireTasks } from "./task-state.mjs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import {
@@ -186,6 +187,7 @@ function normalizeShot(shot = {}) {
     generationError: String(shot.generationError || ""),
     generationRequestedAt: shot.generationRequestedAt || null,
     generationStartedAt: shot.generationStartedAt || null,
+    generationHeartbeatAt: shot.generationHeartbeatAt || null,
     generationCompletedAt: shot.generationCompletedAt || null
   };
 }
@@ -211,6 +213,7 @@ function normalizeCover(cover = {}, type = "vertical") {
     generationError: String(cover.generationError || ""),
     generationRequestedAt: cover.generationRequestedAt || null,
     generationStartedAt: cover.generationStartedAt || null,
+    generationHeartbeatAt: cover.generationHeartbeatAt || null,
     generationCompletedAt: cover.generationCompletedAt || null
   };
 }
@@ -267,6 +270,7 @@ async function readProject(projectId) {
   try {
     const project = normalizeProject(JSON.parse(await readFile(projectFile(projectId), "utf8")));
     project.hasDesign = await exists(projectDesignFile(projectId));
+    if (expireTasks(project)) return saveProject(project);
     return project;
   } catch (error) {
     if (error.code === "ENOENT") throw Object.assign(new Error("Project not found"), { status: 404 });
@@ -1217,7 +1221,7 @@ async function handleGenerationApi(request, response, url) {
   }
 
   const taskMatch = url.pathname.match(
-    /^\/api\/generation\/tasks\/([^/]+)\/(claim|complete|fail|cancel)$/
+    /^\/api\/generation\/tasks\/([^/]+)\/(claim|complete|fail|cancel|heartbeat)$/
   );
   if (taskMatch && request.method === "POST") {
     return mutateGenerationTask(async () => {
@@ -1227,12 +1231,17 @@ async function handleGenerationApi(request, response, url) {
       const { project, item, taskType } = found;
       const body = await readBody(request);
 
+      if (["complete", "fail", "heartbeat"].includes(action) && !["pending", "processing"].includes(item.generationStatus)) {
+        return sendError(response, 409, `Task is ${item.generationStatus}`);
+      }
+      if (action === "heartbeat") item.generationHeartbeatAt = new Date().toISOString();
       if (action === "claim") {
         if (item.generationStatus !== "pending") {
           return sendError(response, 409, `Task is ${item.generationStatus}`);
         }
         item.generationStatus = "processing";
         item.generationStartedAt = new Date().toISOString();
+        item.generationHeartbeatAt = item.generationStartedAt;
       }
 
       if (action === "complete") {
@@ -1248,7 +1257,7 @@ async function handleGenerationApi(request, response, url) {
       }
 
       if (action === "cancel") {
-        if (item.generationStatus !== "pending") {
+        if (!["pending", "processing"].includes(item.generationStatus)) {
           return sendError(response, 409, `Task is ${item.generationStatus}`);
         }
         item.generationStatus = item.mediaUrl ? "ready" : "idle";

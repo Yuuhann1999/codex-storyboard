@@ -360,7 +360,7 @@ function canGenerateCover(cover) {
 function generationButtonLabel(shot) {
   if (shot.generator === "manual") return shot.mediaUrl ? "重新上传" : "本地上传";
   if (shot.generationStatus === "pending") return "取消队列";
-  if (shot.generationStatus === "processing") return "生成中";
+  if (shot.generationStatus === "processing") return "释放任务";
   if (!shot.visualPrompt.trim() && !["pending", "processing"].includes(shot.generationStatus)) {
     return "填写画面描述";
   }
@@ -1677,11 +1677,14 @@ function renderStoryboard() {
     const generateButton = row.querySelector(".generate-shot");
     generateButton.textContent = generationButtonLabel(shot);
     generateButton.disabled =
-      shot.generationStatus === "processing" ||
       (shot.generator !== "manual" && !shot.visualPrompt.trim());
     generateButton.dataset.action = shot.generationStatus === "pending" ? "cancel" : "generate";
     generateButton.addEventListener("click", () => {
       if (shot.generator === "manual") return chooseUpload(shot.id);
+      if (shot.generationStatus === "processing") {
+        if (confirm("释放此任务？外部生成进程可能仍在运行，但旧结果将不再回填。")) return cancelGeneration(shot);
+        return;
+      }
       if (shot.generationStatus === "pending") return cancelGeneration(shot);
       return queueGeneration(
         [shot.id],
@@ -1935,8 +1938,9 @@ async function uploadProjectDesignFromContent(projectId, content) {
 }
 
 async function cancelGeneration(shot) {
-  saveStatus.textContent = "取消生成任务…";
   try {
+    await flushSave();
+    saveStatus.textContent = "取消生成任务…";
     const result = await api(
       `/api/generation/tasks/${encodeURIComponent(shot.generationTaskId)}/cancel`,
       { method: "POST", body: JSON.stringify({}) }
