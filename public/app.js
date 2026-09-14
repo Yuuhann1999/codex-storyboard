@@ -40,6 +40,7 @@ const coverPrompt = document.querySelector("#cover-prompt");
 const coverUpload = document.querySelector("#cover-upload");
 const coverReferenceUpload = document.querySelector("#cover-reference-upload");
 const coverReferencePreview = document.querySelector("#cover-reference-preview");
+const voiceReferenceUpload = document.querySelector("#voice-reference-upload");
 const toast = document.querySelector("#toast");
 const themeButtons = document.querySelectorAll("[data-theme-toggle]");
 const themeStorageKey = "codex-storyboard-theme";
@@ -2161,6 +2162,22 @@ function renderVoice() {
   const status = document.querySelector("#voice-status");
   status.textContent = ({ generating: "生成中", aligning: "对齐中", ready: "已就绪", failed: "需要处理" })[audio.status] || "未生成";
   status.dataset.status = audio.status || "idle";
+  const reference = audio.reference && typeof audio.reference === "object" ? audio.reference : null;
+  const referenceName = document.querySelector("#voice-reference-name");
+  const referencePlayer = document.querySelector("#voice-reference-player");
+  const referenceText = document.querySelector("#voice-reference-text");
+  const deleteReference = document.querySelector("#delete-voice-reference");
+  referenceName.textContent = reference?.fileName ? `已上传：${reference.fileName}` : "未上传参考音频";
+  deleteReference.disabled = busy || !reference?.fileName;
+  if (reference?.url) {
+    referencePlayer.hidden = false;
+    if (referencePlayer.getAttribute("src") !== reference.url) referencePlayer.src = reference.url;
+  } else {
+    referencePlayer.hidden = true;
+    referencePlayer.removeAttribute("src");
+    referencePlayer.load();
+  }
+  if (document.activeElement !== referenceText) referenceText.value = reference?.text || "";
   currentMeta.textContent = take
     ? `当前使用 · 版本 ${String(takeIndex + 1).padStart(2, "0")} · ${(take.durationMs / 1000).toFixed(2)} 秒`
     : "尚未生成配音";
@@ -2228,6 +2245,40 @@ function renderVoice() {
     return card;
   }));
 }
+async function uploadVoiceReference(file) {
+  if (!project || !file) return;
+  if (file.type && !["audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3"].includes(file.type)) {
+    showToast("参考音频仅支持 WAV 或 MP3", "error");
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  saveStatus.textContent = "上传参考音频…";
+  try {
+    await flushSave();
+    project = await api(`/api/projects/${encodeURIComponent(project.id)}/audio/reference`, { method: "POST", body: form });
+    renderStoryboard();
+    saveStatus.textContent = "已保存";
+    showToast("参考音频已上传");
+  } catch (error) {
+    saveStatus.textContent = "上传失败";
+    showToast(error.message, "error");
+  }
+}
+async function deleteVoiceReference() {
+  if (!project?.audio?.reference) return;
+  saveStatus.textContent = "删除参考音频…";
+  try {
+    await flushSave();
+    project = await api(`/api/projects/${encodeURIComponent(project.id)}/audio/reference`, { method: "DELETE" });
+    renderStoryboard();
+    saveStatus.textContent = "已保存";
+    showToast("参考音频已删除");
+  } catch (error) {
+    saveStatus.textContent = "删除失败";
+    showToast(error.message, "error");
+  }
+}
 async function voiceAction(action, payload = {}) {
   try {
     await flushSave();
@@ -2236,8 +2287,11 @@ async function voiceAction(action, payload = {}) {
   } catch (error) { showToast(error.message, "error"); }
 }
 document.querySelector("#voice-generate").addEventListener("click", () => {
-  if (!confirm("将镜头台词（无台词时使用脚本）发送到 VoxCPM 在线服务生成配音，继续？")) return;
-  voiceAction("generate", { instruction: document.querySelector("#voice-instruction").value });
+  if (!confirm("将镜头台词（无台词时使用脚本）以及已上传的参考音频（如有）发送到 VoxCPM 在线服务生成配音，继续？")) return;
+  voiceAction("generate", {
+    instruction: document.querySelector("#voice-instruction").value,
+    referenceText: document.querySelector("#voice-reference-text").value
+  });
 });
 document.querySelector("#voice-align").addEventListener("click", () => voiceAction("align"));
 document.querySelector("#voice-apply").addEventListener("click", () => {
@@ -2367,6 +2421,12 @@ generateAllButton.addEventListener("click", async () => {
 });
 
 mediaUpload.addEventListener("change", () => uploadMedia(mediaUpload.files?.[0]));
+document.querySelector("#upload-voice-reference").addEventListener("click", () => {
+  voiceReferenceUpload.value = "";
+  voiceReferenceUpload.click();
+});
+voiceReferenceUpload.addEventListener("change", () => uploadVoiceReference(voiceReferenceUpload.files?.[0]));
+document.querySelector("#delete-voice-reference").addEventListener("click", deleteVoiceReference);
 document.querySelector("#choose-project-design").addEventListener("click", () => {
   projectDesignUpload.value = "";
   projectDesignUpload.click();

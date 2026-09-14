@@ -11,9 +11,12 @@ except ImportError:
     raise SystemExit("Missing gradio_client. Install it in CODEX_STORYBOARD_PYTHON with: python -m pip install gradio_client")
 
 request = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+prompt_wav = Path(request["promptWav"]) if request.get("promptWav") else None
+if prompt_wav and not prompt_wav.exists():
+    raise SystemExit(f"参考音频文件不存在：{prompt_wav}")
 generate(
     text=request["text"], output=Path(request["output"]),
     api_base="https://voxcpm.modelbest.cn", instruction=request.get("instruction", ""),
-    prompt_wav=None, prompt_text="", cfg=2.0, steps=10,
+    prompt_wav=prompt_wav, prompt_text=str(request.get("promptText") or ""), cfg=2.0, steps=10,
     normalize=True, denoise=False, user_id="codex-storyboard",
 )

@@ -285,6 +285,22 @@
               <span>声音描述 <small>可选</small></span>
               <input id="voice-instruction" placeholder="自然、清晰的普通话" maxlength="1000" />
             </label>
+            <div class="voice-field">
+              <span>参考音频 <small>可选</small></span>
+              <div class="voice-reference-control">
+                <div class="voice-reference-actions">
+                  <button id="upload-voice-reference" class="secondary compact-button" type="button">上传 WAV / MP3</button>
+                  <button id="delete-voice-reference" class="secondary compact-button" type="button" disabled>删除</button>
+                  <span id="voice-reference-name" class="voice-reference-name" aria-live="polite">未上传参考音频</span>
+                </div>
+                <audio id="voice-reference-player" controls preload="metadata" hidden aria-label="试听参考音频"></audio>
+                <small class="voice-field-hint">上传清晰的人声片段，可克隆参考音色；填写原文可进一步提升还原度。</small>
+              </div>
+            </div>
+            <label class="voice-field">
+              <span>参考音频原文 <small>可选</small></span>
+              <input id="voice-reference-text" placeholder="填写参考音频里说的原文" maxlength="1000" />
+            </label>
           </section>
           <section class="voice-section voice-timing-section">
             <div class="voice-section-heading voice-timing-heading">
@@ -588,6 +604,7 @@
   />
   <input id="cover-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
   <input id="cover-reference-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+  <input id="voice-reference-upload" type="file" accept="audio/wav,audio/x-wav,audio/mpeg" hidden />
   <input id="project-design-upload" type="file" accept=".md,text/markdown,text/plain" hidden />
   <input id="design-upload" type="file" accept=".md,text/markdown,text/plain" hidden />
   <div id="select-portal"></div>

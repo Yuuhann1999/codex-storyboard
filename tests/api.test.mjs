@@ -50,6 +50,16 @@ test("project persistence, conflict detection, generation cancellation and recov
     assert.equal(recovered.audio.status, "failed");
     assert.equal((await request(path)).data.shots[0].generationStatus, "failed");
     assert.equal((await request(`/api/generation/tasks/${task}/complete`, "POST", { sourcePath: "missing.png" })).status, 409);
+    const referenceBytes = Buffer.from("RIFF-codex-reference");
+    const referenceForm = new FormData();
+    referenceForm.append("file", new Blob([referenceBytes], { type: "audio/wav" }), "reference.wav");
+    const referenceResponse = await fetch(`http://127.0.0.1:${port}${path}/audio/reference`, { method: "POST", body: referenceForm });
+    assert.equal(referenceResponse.status, 200);
+    const referenceProject = await referenceResponse.json();
+    assert.equal(referenceProject.audio.reference.fileName, "voice-reference.wav");
+    const referenceMedia = await fetch(`http://127.0.0.1:${port}${referenceProject.audio.reference.url}`);
+    assert.equal(referenceMedia.headers.get("content-length"), String(referenceBytes.length));
+    assert.deepEqual(Buffer.from(await referenceMedia.arrayBuffer()), referenceBytes);
     assert.equal((await request(`${path}/audio/generate`, "POST", { instruction: "test" })).status, 202);
     let audio;
     for (let i = 0; i < 50; i++) {

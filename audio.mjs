@@ -44,12 +44,18 @@ export async function audioDuration(path) {
   return Math.round(duration * 1000);
 }
 
-export async function generateVoice({ directory, id, text, instruction }) {
+export async function generateVoice({ directory, id, text, instruction, promptWav, promptText }) {
   const input = join(directory, `${id}.json`);
   const raw = join(directory, `${id}-raw.wav`);
   const output = join(directory, `${id}.wav`);
   await verifyVoiceRuntime();
-  await writeFile(input, JSON.stringify({ text, instruction, output: raw }), "utf8");
+  await writeFile(input, JSON.stringify({
+    text,
+    instruction,
+    output: raw,
+    promptWav: promptWav ? String(promptWav) : "",
+    promptText: String(promptText || "")
+  }), "utf8");
   try {
     await run(python, [fileURLToPath(new URL("./voice/voxcpm.py", import.meta.url)), input], 10 * 60 * 1000);
     await run(ffmpeg, ["-y", "-i", raw, "-ar", "48000", "-ac", "1", output], 60000);

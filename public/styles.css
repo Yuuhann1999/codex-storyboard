@@ -2704,6 +2704,39 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+.voice-reference-control {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.voice-reference-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.voice-reference-name,
+.voice-field-hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.voice-reference-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-reference-control audio {
+  width: min(100%, 360px);
+  min-width: 220px;
+  height: 34px;
+}
+
 .voice-actions {
   display: flex;
   align-items: center;

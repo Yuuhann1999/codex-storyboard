@@ -57,6 +57,10 @@ const aspectRatios = {
 const contentTypes = {
   ".wav": "audio/wav",
   ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".ogg": "audio/ogg",
+  ".flac": "audio/flac",
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -80,6 +84,14 @@ const allowedUploads = new Map([
   ["video/mp4", ".mp4"],
   ["video/webm", ".webm"],
   ["video/quicktime", ".mov"]
+]);
+
+const allowedAudioUploads = new Map([
+  ["audio/wav", ".wav"],
+  ["audio/x-wav", ".wav"],
+  ["audio/wave", ".wav"],
+  ["audio/mpeg", ".mp3"],
+  ["audio/mp3", ".mp3"]
 ]);
 
 const coverRatios = {
@@ -345,6 +357,10 @@ function coverMediaFileName(type, extension) {
 
 function coverReferenceFileName(type, extension) {
   return `cover-${type === "horizontal" ? "horizontal" : "vertical"}-reference${extension}`;
+}
+
+function audioReferenceFileName(extension) {
+  return `voice-reference${extension}`;
 }
 
 async function removeCurrentMedia(project, mediaUrlValue) {
@@ -789,6 +805,33 @@ async function saveUploadedCoverReference(project, cover, request) {
   cover.referenceUrl = mediaUrl(project.id, fileName);
 }
 
+async function saveUploadedAudioReference(project, request) {
+  const contentType = request.headers["content-type"] || "";
+  if (!contentType.startsWith("multipart/form-data")) throw new Error("需要 multipart/form-data");
+  const file = parseMultipart(await readBodyBuffer(request), contentType);
+  const extension = allowedAudioUploads.get(file.mimeType);
+  if (!extension) throw new Error("参考音频仅支持 WAV 或 MP3");
+
+  const audio = project.audio && typeof project.audio === "object"
+    ? project.audio
+    : { takes: [], selectedId: "", status: "idle" };
+  const fileName = audioReferenceFileName(extension);
+  await removeCurrentMedia(project, audio.reference?.url);
+  await writeFile(join(projectMediaDir(project.id), fileName), file.content);
+  audio.reference = {
+    fileName,
+    url: mediaUrl(project.id, fileName),
+    text: String(audio.reference?.text || "")
+  };
+  project.audio = audio;
+}
+
+async function removeAudioReference(project) {
+  const reference = project.audio?.reference;
+  if (reference?.url) await removeCurrentMedia(project, reference.url);
+  project.audio.reference = null;
+}
+
 async function saveUploadedDesign(project, request) {
   const contentType = request.headers["content-type"] || "";
   if (!contentType.startsWith("multipart/form-data")) throw new Error("需要 multipart/form-data");
@@ -885,6 +928,7 @@ async function serveFile(response, filePath, allowedRoots = [publicDir]) {
     const file = await readFile(normalized);
     response.writeHead(200, {
       "content-type": contentTypes[extname(normalized).toLowerCase()] || "application/octet-stream",
+      "content-length": String(file.byteLength),
       "cache-control": "no-store"
     });
     response.end(file);
@@ -1298,6 +1342,21 @@ async function handleGenerationApi(request, response, url) {
 }
 
 async function handleApi(request, response, url) {
+  const audioReferenceMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/audio\/reference$/);
+  if (audioReferenceMatch) {
+    const projectId = decodeURIComponent(audioReferenceMatch[1]);
+    const project = await readProject(projectId);
+    if (audioJobs.has(projectId)) return sendError(response, 409, "配音任务正在处理，暂时无法修改参考音频");
+    if (request.method === "POST") {
+      await saveUploadedAudioReference(project, request);
+      return sendJson(response, 200, await saveProject(project));
+    }
+    if (request.method === "DELETE") {
+      await removeAudioReference(project);
+      return sendJson(response, 200, await saveProject(project));
+    }
+  }
+
   const audioMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/audio\/(generate|select|align|apply-durations)$/);
   if (audioMatch && request.method === "POST") {
     const [, projectId, action] = audioMatch;
@@ -1347,14 +1406,36 @@ async function handleApi(request, response, url) {
     if (!text || text.length > 10000) return sendError(response, 400, "请填写台词或脚本，最多 10000 字");
     const id = createId("voice");
     const instruction = String(body.instruction || "").slice(0, 1000);
+    const reference = project.audio.reference;
+    const referenceFileName = basename(String(reference?.fileName || ""));
+    const referencePath = referenceFileName ? join(projectMediaDir(projectId), referenceFileName) : null;
+    if (referencePath && !(await exists(referencePath))) return sendError(response, 409, "参考音频文件不存在，请重新上传");
+    const referenceText = String(body.referenceText ?? reference?.text ?? "").slice(0, 1000);
+    if (reference) reference.text = referenceText;
     project.audio.status = "generating";
     project.audio.error = "";
     project.audio.startedAt = new Date().toISOString();
     audioJobs.add(projectId);
     const saved = await saveProject(project);
-    void generateVoice({ directory: projectMediaDir(projectId), id, text, instruction }).then(result => serializeApi(async () => {
+    void generateVoice({
+      directory: projectMediaDir(projectId),
+      id,
+      text,
+      instruction,
+      promptWav: referencePath,
+      promptText: referenceText
+    }).then(result => serializeApi(async () => {
       const current = await readProject(projectId);
-      current.audio.takes.push({ id, ...result, url: mediaUrl(projectId, result.fileName), text, instruction, createdAt: new Date().toISOString() });
+      current.audio.takes.push({
+        id,
+        ...result,
+        url: mediaUrl(projectId, result.fileName),
+        text,
+        instruction,
+        referenceFileName,
+        referenceText,
+        createdAt: new Date().toISOString()
+      });
       current.audio.selectedId = id;
       current.audio.status = "ready";
       await saveProject(current);
@@ -1375,7 +1456,7 @@ async function handleApi(request, response, url) {
     return sendJson(response, 200, {
       ok: true,
       app: "codex-storyboard",
-      version: "0.6.3",
+      version: "0.6.4",
       dataDir,
       publicDir
     });
