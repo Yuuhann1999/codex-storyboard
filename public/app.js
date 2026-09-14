@@ -2252,8 +2252,8 @@ function renderVoice() {
 }
 async function uploadVoiceReference(file) {
   if (!project || !file) return;
-  if (file.type && !["audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3"].includes(file.type)) {
-    showToast("参考音频仅支持 WAV 或 MP3", "error");
+  if (file.type && !["audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3", "audio/mp4", "audio/x-m4a", "audio/m4a"].includes(file.type)) {
+    showToast("参考音频仅支持 WAV、MP3 或 M4A", "error");
     return;
   }
   const form = new FormData();

@@ -91,7 +91,10 @@ const allowedAudioUploads = new Map([
   ["audio/x-wav", ".wav"],
   ["audio/wave", ".wav"],
   ["audio/mpeg", ".mp3"],
-  ["audio/mp3", ".mp3"]
+  ["audio/mp3", ".mp3"],
+  ["audio/mp4", ".m4a"],
+  ["audio/x-m4a", ".m4a"],
+  ["audio/m4a", ".m4a"]
 ]);
 
 const coverRatios = {
@@ -813,8 +816,9 @@ async function saveUploadedAudioReference(project, request) {
   const contentType = request.headers["content-type"] || "";
   if (!contentType.startsWith("multipart/form-data")) throw new Error("需要 multipart/form-data");
   const file = parseMultipart(await readBodyBuffer(request), contentType);
-  const extension = allowedAudioUploads.get(file.mimeType);
-  if (!extension) throw new Error("参考音频仅支持 WAV 或 MP3");
+  const mimeType = String(file.mimeType || "").split(";", 1)[0].trim().toLowerCase();
+  const extension = allowedAudioUploads.get(mimeType);
+  if (!extension) throw new Error("参考音频仅支持 WAV、MP3 或 M4A");
 
   const audio = project.audio && typeof project.audio === "object"
     ? project.audio
@@ -1496,7 +1500,7 @@ async function handleApi(request, response, url) {
     return sendJson(response, 200, {
       ok: true,
       app: "codex-storyboard",
-      version: "0.6.6",
+      version: "0.6.7",
       dataDir,
       publicDir
     });

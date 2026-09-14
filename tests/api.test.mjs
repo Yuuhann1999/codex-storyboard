@@ -66,6 +66,16 @@ test("project persistence, conflict detection, generation cancellation and recov
     assert.equal(rangedMedia.headers.get("content-range"), `bytes 2-5/${referenceBytes.length}`);
     assert.equal(rangedMedia.headers.get("content-length"), "4");
     assert.deepEqual(Buffer.from(await rangedMedia.arrayBuffer()), referenceBytes.subarray(2, 6));
+    const m4aBytes = Buffer.from("M4A-codex-reference");
+    const m4aForm = new FormData();
+    m4aForm.append("file", new Blob([m4aBytes], { type: "audio/mp4" }), "reference.m4a");
+    const m4aResponse = await fetch(`http://127.0.0.1:${port}${path}/audio/reference`, { method: "POST", body: m4aForm });
+    assert.equal(m4aResponse.status, 200);
+    const m4aProject = await m4aResponse.json();
+    assert.equal(m4aProject.audio.reference.fileName, "voice-reference.m4a");
+    const m4aMedia = await fetch(`http://127.0.0.1:${port}${m4aProject.audio.reference.url}`);
+    assert.equal(m4aMedia.headers.get("content-type"), "audio/mp4");
+    assert.deepEqual(Buffer.from(await m4aMedia.arrayBuffer()), m4aBytes);
     assert.equal((await request(`${path}/audio/generate`, "POST", { instruction: "test" })).status, 202);
     let audio;
     for (let i = 0; i < 50; i++) {

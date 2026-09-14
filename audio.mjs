@@ -1,6 +1,6 @@
 import { writeFile, readFile, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { run, python, ffmpeg, ffprobe, whisper, whisperModel } from "./runtime.mjs";
 import { matchRecognition } from "./recognition.mjs";
@@ -48,20 +48,28 @@ export async function generateVoice({ directory, id, text, instruction, promptWa
   const input = join(directory, `${id}.json`);
   const raw = join(directory, `${id}-raw.wav`);
   const output = join(directory, `${id}.wav`);
-  await verifyVoiceRuntime();
-  await writeFile(input, JSON.stringify({
-    text,
-    instruction,
-    output: raw,
-    promptWav: promptWav ? String(promptWav) : "",
-    promptText: String(promptText || "")
-  }), "utf8");
+  let convertedPromptWav = null;
   try {
+    await verifyVoiceRuntime();
+    let promptForVoice = promptWav;
+    if (promptWav && extname(String(promptWav)).toLowerCase() !== ".wav") {
+      convertedPromptWav = join(directory, `${id}-prompt.wav`);
+      await run(ffmpeg, ["-y", "-i", String(promptWav), "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", convertedPromptWav], 60000);
+      promptForVoice = convertedPromptWav;
+    }
+    await writeFile(input, JSON.stringify({
+      text,
+      instruction,
+      output: raw,
+      promptWav: promptForVoice ? String(promptForVoice) : "",
+      promptText: String(promptText || "")
+    }), "utf8");
     await run(python, [fileURLToPath(new URL("./voice/voxcpm.py", import.meta.url)), input], 10 * 60 * 1000);
     await run(ffmpeg, ["-y", "-i", raw, "-ar", "48000", "-ac", "1", output], 60000);
     return { fileName: `${id}.wav`, durationMs: await audioDuration(output) };
   } finally {
     await rm(input, { force: true });
     await rm(raw, { force: true });
+    if (convertedPromptWav) await rm(convertedPromptWav, { force: true });
   }
 }
