@@ -1389,6 +1389,8 @@ async function handleApi(request, response, url) {
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) return sendError(response, 403, "Local host required");
+    if (request.headers.origin && request.headers.origin !== url.origin) return sendError(response, 403, "Cross-origin requests are not allowed");
     if (url.pathname.startsWith("/api/")) return await serializeApi(() => handleApi(request, response, url));
 
     const mediaMatch = url.pathname.match(/^\/media\/([^/]+)\/([^/]+)$/);

@@ -20,3 +20,18 @@ retried after restarting. Existing versions are retained on failure.
 
 The interaction and Gradio request contract were informed by the local
 dsh-storyboard implementation. No CosyVoice or DashScope code is included.
+
+## Alignment
+
+The first implementation uses FFmpeg silence detection and dialogue character
+weights, not speech recognition. Estimates can be reviewed and adjusted in seconds
+before applying them. A dialogue fingerprint rejects stale timing after edits or
+reordering. Non-speaking shots keep their existing duration; their extra time is
+not automatically inserted as silence in the audio. This is not a final video mix.
+
+## Development checks
+
+Run `npm test` and `npm run check`. Tests use temporary projects and never modify
+the user's data. Plugin parity tests ensure the bundled app matches development.
+Real online synthesis needs the dependencies above and network access; offline
+tests validate the queue, failure recovery and timing math, not voice quality.

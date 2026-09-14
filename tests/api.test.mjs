@@ -11,7 +11,7 @@ test("project persistence, conflict detection, generation cancellation and recov
   await new Promise(resolve => socket.listen(0, "127.0.0.1", resolve));
   const port = socket.address().port;
   await new Promise(resolve => socket.close(resolve));
-  const child = spawn(process.execPath, ["server.mjs", "--port", String(port), "--data-dir", directory], { windowsHide: true });
+  const child = spawn(process.execPath, ["server.mjs", "--port", String(port), "--data-dir", directory], { windowsHide: true, env: { ...process.env, CODEX_STORYBOARD_PYTHON: join(directory, "missing-python") } });
   const stopped = new Promise(resolve => child.on("close", resolve));
   let log = ""; child.stderr.on("data", d => { log += d; });
   child.stdout.on("data", d => { log += d; });
@@ -50,6 +50,17 @@ test("project persistence, conflict detection, generation cancellation and recov
     assert.equal(recovered.audio.status, "failed");
     assert.equal((await request(path)).data.shots[0].generationStatus, "failed");
     assert.equal((await request(`/api/generation/tasks/${task}/complete`, "POST", { sourcePath: "missing.png" })).status, 409);
+    assert.equal((await request(`${path}/audio/generate`, "POST", { instruction: "test" })).status, 202);
+    let audio;
+    for (let i = 0; i < 50; i++) {
+      audio = (await request(path)).data.audio;
+      if (audio.status === "failed") break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(audio.status, "failed");
+    assert.ok(audio.error);
+    const blocked = await fetch(`http://127.0.0.1:${port}${path}/audio/generate`, { method: "POST", headers: { origin: "https://untrusted.example", "content-type": "application/json" }, body: "{}" });
+    assert.equal(blocked.status, 403);
   } finally {
     child.kill(); await stopped;
     await rm(directory, { recursive: true, force: true });
