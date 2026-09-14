@@ -2,6 +2,7 @@
 node_modules/
 .venv-voice/
 .runtime-voice/
+__pycache__/
 .superpowers/
 generation/
 data/projects.json
