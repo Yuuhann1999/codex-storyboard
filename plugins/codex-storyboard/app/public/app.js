@@ -1,4 +1,5 @@
 import { createAutosave } from "./autosave.js";
+import { inspectPacing } from "./pacing.js";
 const projectsView = document.querySelector("#projects-view");
 const storyboardView = document.querySelector("#storyboard-view");
 const scriptPanel = document.querySelector("#script-panel");
@@ -1595,6 +1596,11 @@ function renderSelect(container, field, shot, onChange) {
 }
 
 function updateSummary() {
+  const warnings = inspectPacing(project.shots);
+  document.querySelector("#pacing-summary").textContent = warnings.length ? `节奏检查 · ${warnings.length} 条建议` : "节奏检查 · 无明显异常";
+  document.querySelector("#pacing-results").replaceChildren(...warnings.map(message => {
+    const item = document.createElement("li"); item.textContent = message; return item;
+  }));
   durationTotal.textContent = formatDuration(
     project.shots.reduce((sum, shot) => sum + Number(shot.duration || 0), 0)
   );

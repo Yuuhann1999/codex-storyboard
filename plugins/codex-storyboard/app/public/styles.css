@@ -995,6 +995,9 @@ body {
 #environment-dialog { max-width: min(640px, calc(100vw - 32px)); }
 #environment-results p { padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .voice-panel { border-bottom: 1px solid var(--line); padding: 12px 0; margin-bottom: 12px; }
+.pacing-panel { padding: 0 0 12px; font-size: 13px; color: var(--muted); }
+.pacing-panel summary { cursor: pointer; }
+.pacing-panel li { margin: 6px 0; }
 .voice-panel summary { cursor: pointer; font-weight: 600; }
 #voice-status { color: var(--muted); font-size: 12px; margin-left: 12px; }
 .voice-content { padding-top: 12px; display: grid; gap: 12px; }
