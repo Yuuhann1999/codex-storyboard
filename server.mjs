@@ -671,6 +671,7 @@ function generationTask(project, item, type = "shot") {
     status: item.generationStatus,
     generator: isCover ? "image-gen" : item.generator,
     mediaType: isCover ? "image" : item.mediaType,
+    rollType: isCover ? null : item.rollType,
     duration: isCover ? 0 : item.duration,
     dialogue: isCover ? item.title : item.dialogue,
     visualPrompt: isCover ? item.prompt : item.visualPrompt,
@@ -1374,7 +1375,7 @@ async function handleApi(request, response, url) {
     return sendJson(response, 200, {
       ok: true,
       app: "codex-storyboard",
-      version: "0.5.4",
+      version: "0.6.0",
       dataDir,
       publicDir
     });
