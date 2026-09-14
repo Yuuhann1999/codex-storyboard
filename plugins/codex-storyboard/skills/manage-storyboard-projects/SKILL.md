@@ -64,6 +64,18 @@ Use one `update_storyboard_project` call:
 
 Fetch the complete project first only when shot IDs or existing content are required.
 
+## Apply copied visual-arrangement prompts
+
+When a copied prompt contains a target project ID and asks to generate a director-style visual arrangement, treat it as an execution request that must write back to the storyboard page. Do not answer with a Markdown table only.
+
+1. Call `get_storyboard_project` with the provided project ID.
+2. Build the complete shot list internally, preserving the original dialogue and mapping the arrangement into `visualPrompt` and `notes`.
+3. Call `update_storyboard_project` once to apply `shotUpdates`, `appendShots`, and only necessary `deleteShotIds`; never delete the project or its media for this workflow.
+4. Do not enqueue image, video, HyperFrames, or Remotion generation during the arrangement step.
+5. After the write, return a concise summary of the number of shots written, full-check conclusions, unresolved material decisions, and the project URL. Do not repeat the full table in chat.
+
+If no completed aligned voice timeline is provided, do not invent timestamps. Use `duration: 0` and record `时长待录音后确定` in `notes`; when an aligned timeline exists, derive seconds from its exact millisecond phrase boundaries.
+
 ## Delete
 
 Project deletion permanently removes the project and its local media. Ask for explicit confirmation immediately before calling `delete_storyboard_project`.
