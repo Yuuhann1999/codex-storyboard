@@ -1318,13 +1318,14 @@ async function handleApi(request, response, url) {
       project.audio.status = "aligning";
       project.audio.error = "";
       const saved = await saveProject(project);
-      void alignVoice(join(projectMediaDir(projectId), basename(take.fileName)), project.shots, take.durationMs).then(timeline => serializeApi(async () => {
+      void alignVoice(join(projectMediaDir(projectId), basename(take.fileName)), project.shots, take.durationMs).then(alignment => serializeApi(async () => {
         const current = await readProject(projectId);
         const version = current.audio.takes.find(t => t.id === take.id);
         if (!version) throw new Error("配音版本已移除");
-        version.timeline = timeline;
+        version.timeline = alignment.timeline;
+        version.recognition = alignment.recognition;
         version.dialogueKey = dialogueKey(project.shots);
-        version.alignEngine = "silence-estimate";
+        version.alignEngine = alignment.engine;
         current.audio.status = "ready";
         await saveProject(current);
       })).catch(error => serializeApi(async () => {

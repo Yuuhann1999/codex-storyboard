@@ -2039,6 +2039,9 @@ function renderVoice() {
   document.querySelector("#voice-align").disabled = busy || !take;
   document.querySelector("#voice-apply").disabled = busy || !take?.timeline?.length;
   document.querySelector("#timing-note").hidden = !take?.timeline?.length;
+  document.querySelector("#timing-note").textContent = take?.alignEngine?.startsWith("whisper") ? "Whisper 本地识别对齐，建议试听校正。无台词镜头保留原时长。" : "旧版估算结果，建议重新识别对齐。";
+  document.querySelector("#recognition-details").hidden = !take?.recognition?.length;
+  document.querySelector("#recognition-text").textContent = (take?.recognition || []).map(s => `${(s.start / 1000).toFixed(2)}–${(s.end / 1000).toFixed(2)} 秒：${s.text}`).join("\n");
   document.querySelector("#voice-timeline").replaceChildren(...(take?.timeline || []).map(segment => {
     const row = document.createElement("div"); row.className = "timing-row"; row.dataset.shotId = segment.shotId;
     const text = document.createElement("span"); text.textContent = segment.text;
