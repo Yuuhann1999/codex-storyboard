@@ -1048,7 +1048,6 @@ body {
 .script-panel > .voice-panel { margin-top: 16px; }
 .script-card {
   width: 100%;
-  height: 100%;
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

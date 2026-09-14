@@ -40,7 +40,8 @@ export function run(command, args, timeout = 15000) {
   });
 }
 const venvPython = join(root, ".venv-voice", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
-export const python = process.env.CODEX_STORYBOARD_PYTHON || (existsSync(venvPython) ? venvPython : "python");
+const defaultPython = process.platform === "win32" ? "python" : "python3";
+export const python = process.env.CODEX_STORYBOARD_PYTHON || (existsSync(venvPython) ? venvPython : defaultPython);
 export const ffmpeg = process.env.CODEX_STORYBOARD_FFMPEG || localBinary("ffmpeg/bin/ffmpeg.exe") || findWindowsBinary("ffmpeg.exe") || "ffmpeg";
 export const ffprobe = process.env.CODEX_STORYBOARD_FFPROBE || localBinary("ffmpeg/bin/ffprobe.exe") || findWindowsBinary("ffprobe.exe") || "ffprobe";
 export const whisper = process.env.CODEX_STORYBOARD_WHISPER || localBinary("whisper/whisper-cli.exe") || "whisper-cli";
