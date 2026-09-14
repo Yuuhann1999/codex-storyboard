@@ -1375,7 +1375,7 @@ async function handleApi(request, response, url) {
     return sendJson(response, 200, {
       ok: true,
       app: "codex-storyboard",
-      version: "0.6.2",
+      version: "0.6.3",
       dataDir,
       publicDir
     });
