@@ -60,6 +60,12 @@ test("project persistence, conflict detection, generation cancellation and recov
     const referenceMedia = await fetch(`http://127.0.0.1:${port}${referenceProject.audio.reference.url}`);
     assert.equal(referenceMedia.headers.get("content-length"), String(referenceBytes.length));
     assert.deepEqual(Buffer.from(await referenceMedia.arrayBuffer()), referenceBytes);
+    const rangedMedia = await fetch(`http://127.0.0.1:${port}${referenceProject.audio.reference.url}`, { headers: { range: "bytes=2-5" } });
+    assert.equal(rangedMedia.status, 206);
+    assert.equal(rangedMedia.headers.get("accept-ranges"), "bytes");
+    assert.equal(rangedMedia.headers.get("content-range"), `bytes 2-5/${referenceBytes.length}`);
+    assert.equal(rangedMedia.headers.get("content-length"), "4");
+    assert.deepEqual(Buffer.from(await rangedMedia.arrayBuffer()), referenceBytes.subarray(2, 6));
     assert.equal((await request(`${path}/audio/generate`, "POST", { instruction: "test" })).status, 202);
     let audio;
     for (let i = 0; i < 50; i++) {

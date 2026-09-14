@@ -914,7 +914,7 @@ async function migrateLegacyProject() {
   });
 }
 
-async function serveFile(response, filePath, allowedRoots = [publicDir]) {
+async function serveFile(response, filePath, allowedRoots = [publicDir], request) {
   const normalized = resolve(filePath);
   const allowed = allowedRoots.some((base) => {
     const normalizedBase = resolve(base);
@@ -926,9 +926,44 @@ async function serveFile(response, filePath, allowedRoots = [publicDir]) {
 
   try {
     const file = await readFile(normalized);
+    const contentType = contentTypes[extname(normalized).toLowerCase()] || "application/octet-stream";
+    const rangeHeader = request?.headers?.range;
+    if (rangeHeader) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+      const total = file.byteLength;
+      if (!match || (!match[1] && !match[2]) || total === 0) {
+        response.writeHead(416, { "content-range": `bytes */${total}`, "content-length": "0" });
+        return response.end();
+      }
+      let start;
+      let end;
+      if (match[1]) {
+        start = Number(match[1]);
+        end = match[2] ? Number(match[2]) : total - 1;
+      } else {
+        const suffixLength = Number(match[2]);
+        start = Math.max(total - suffixLength, 0);
+        end = total - 1;
+      }
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= total || end < start) {
+        response.writeHead(416, { "content-range": `bytes */${total}`, "content-length": "0" });
+        return response.end();
+      }
+      end = Math.min(end, total - 1);
+      const chunk = file.subarray(start, end + 1);
+      response.writeHead(206, {
+        "content-type": contentType,
+        "content-length": String(chunk.byteLength),
+        "content-range": `bytes ${start}-${end}/${total}`,
+        "accept-ranges": "bytes",
+        "cache-control": "no-store"
+      });
+      return response.end(chunk);
+    }
     response.writeHead(200, {
-      "content-type": contentTypes[extname(normalized).toLowerCase()] || "application/octet-stream",
+      "content-type": contentType,
       "content-length": String(file.byteLength),
+      "accept-ranges": "bytes",
       "cache-control": "no-store"
     });
     response.end(file);
@@ -1456,7 +1491,7 @@ async function handleApi(request, response, url) {
     return sendJson(response, 200, {
       ok: true,
       app: "codex-storyboard",
-      version: "0.6.4",
+      version: "0.6.5",
       dataDir,
       publicDir
     });
@@ -1484,7 +1519,8 @@ const server = createServer(async (request, response) => {
       return await serveFile(
         response,
         join(projectMediaDir(projectId), fileName),
-        [projectMediaDir(projectId)]
+        [projectMediaDir(projectId)],
+        request
       );
     }
 

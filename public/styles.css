@@ -1040,7 +1040,7 @@ body {
 .script-panel {
   display: grid;
   place-items: stretch;
-  grid-template-rows: minmax(360px, 1fr) auto;
+  grid-template-rows: minmax(440px, 1fr) auto;
   height: auto;
   min-height: 100%;
 }
