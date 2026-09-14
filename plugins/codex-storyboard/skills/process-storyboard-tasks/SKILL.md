@@ -5,9 +5,30 @@ description: Process pending Codex Storyboard image and video generation tasks. 
 
 # Process Codex Storyboard Tasks
 
+## Task recovery
+
+While processing a long render, call `heartbeat_storyboard_generation_task`
+at least every 10 minutes. Tasks expire after 30 minutes without a heartbeat.
+If the user released a task or its ID changed, stop attempting to complete it;
+never attach a late output to a replacement task automatically.
+
 Process the local storyboard queue. The MCP tools start the bundled local app automatically when needed and default to `http://127.0.0.1:43218`.
 
 If the current Codex session does not expose Storyboard MCP tools such as `list_storyboard_generation_tasks`, `claim_storyboard_generation_task`, or `complete_storyboard_generation_task`, first use `tool_search` to search for `codex storyboard` and load the deferred tools. Only if `tool_search` is unavailable or cannot find them, tell the user to start a new Codex conversation or restart Codex so plugin tools are reloaded.
+
+## Mandatory B-roll motion gate
+
+For every `B-ROLL` shot routed to `hyperframes` or `remotion`, `plan_broll_motion` is mandatory. Do not claim the task, write a composition, download media, render, or complete the task before this gate is confirmed. The MCP server rejects both claim and completion when the confirmed plan is missing.
+
+Before asking for confirmation, research the shot in this order:
+
+1. Read every available local B-roll template under the project's template roots or the active workspace template directory. Record the roots checked, including an explicit empty result.
+2. Inspect both required reference repositories, even when a local candidate exists: `https://github.com/heygen-com/hyperframes-launches` and `https://github.com/Vincentwei1021/video-shotcraft`.
+3. When an external reference is useful, inspect public X posts and their attached media. Prefer a directly usable public GIF/MP4/video over a screenshot; use a screenshot only when the media cannot be accessed. Record the source URL and a rights/source note, and never invent an account, post, quote, or asset URL.
+
+Call `plan_broll_motion` with `approval: "proposed"` and include the shot's duration, dialogue, audience takeaway, `brollType` (`有素材` / `无素材` / `纯文字`), and `semanticStructure` (`对比` / `聚合` / `筛选` / `层级` / `因果` / `替换` / `展开`). Include the selected local template or the closest reference skeleton, its element relationships and phase order, any direct media sources, and the minimum UI changes: background, anchor color, font, and personalization. Show that proposal to the user and wait for confirmation.
+
+After the user confirms, call the same tool again with `approval: "confirmed"`, `researchComplete: true`, both required repository URLs in `reviewedSources`, and complete `selectedTemplate`, `motionSkeleton`, and `uiChanges`. Only then continue to claim and implement the task. If no suitable local or external motion exists, report the gap and ask for a decision rather than silently inventing a new motion system.
 
 ## Workflow
 
@@ -32,23 +53,24 @@ If the current Codex session does not expose Storyboard MCP tools such as `list_
 
 4. Prefer existing render environments. Use local project dependencies first, then compatible global CLIs. Install only when a required tool is missing, incompatible, or no local dependency set exists. Any install must be explicit and must go into the task `outputDir` or a dedicated renderer cache, not into the user's unrelated project.
 5. Process available tasks one at a time.
-6. Before generating, call `claim_storyboard_generation_task`.
-7. If the claimed task has `hasDesign: true`, read the complete Markdown file at the exact absolute `designPath` before generating anything. Apply it as the project-wide visual system:
+6. For eligible B-roll tasks, complete the mandatory motion gate above. For all other tasks, continue directly to claiming after capability checks.
+7. Before generating, call `claim_storyboard_generation_task`.
+8. If the claimed task has `hasDesign: true`, read the complete Markdown file at the exact absolute `designPath` before generating anything. Apply it as the project-wide visual system:
 
    - `visualPrompt` defines the concrete shot subject and requested content.
    - `DESIGN.md` defines shared visual style, color, typography, composition, texture, and motion language.
    - An explicit shot requirement takes precedence if it conflicts with the general visual system.
 
-8. Route by `generator`:
+9. Route by `generator`:
 
    - `image-gen`: use the built-in `imagegen` skill and built-in image generation tool. Treat `visualPrompt` as the primary prompt and honor the task's `aspectRatio`. If the task includes `referenceImagePath`, use that local image as the visual reference/input for the generation or edit. Copy the final verified image into the active workspace before completing the task.
    - `hyperframes`: use the HyperFrames and HyperFrames CLI skills. Create a self-contained composition using the task's `width`, `height`, duration, and `visualPrompt`, then lint, inspect, render to MP4, and verify the output.
    - `remotion`: use the Remotion skill. Create or reuse a Remotion composition using the task's `width` and `height`, render an MP4 matching the task duration, and verify the output.
 
-9. Technically verify each generated video before completion: the file exists, is readable, has the requested `width` and `height`, has a duration close to the task duration, and has a valid video stream/codec. Then visually inspect representative frames to ensure the render is not blank, black, or the wrong composition.
-10. Call `complete_storyboard_generation_task` with the exact absolute output path and correct media type.
-11. If generation or verification fails, call `fail_storyboard_generation_task` with the concise cause.
-12. Continue until no processable pending tasks remain.
+10. Technically verify each generated video before completion: the file exists, is readable, has the requested `width` and `height`, has a duration close to the task duration, and has a valid video stream/codec. Then visually inspect representative frames to ensure the render is not blank, black, or the wrong composition.
+11. Call `complete_storyboard_generation_task` with the exact absolute output path and correct media type.
+12. If generation or verification fails, call `fail_storyboard_generation_task` with the concise cause.
+13. Continue until no processable pending tasks remain.
 
 ## Output locations
 

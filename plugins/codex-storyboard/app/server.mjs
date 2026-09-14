@@ -1,4 +1,8 @@
 import { createServer } from "node:http";
+import { expireTasks } from "./task-state.mjs";
+import { inspectEnvironment } from "./runtime.mjs";
+import { generateVoice, alignVoice } from "./audio.mjs";
+import { spokenText, dialogueKey, applyTiming } from "./timing.mjs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import {
@@ -6,6 +10,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   writeFile
@@ -28,6 +33,18 @@ const legacyDataFile = join(dataDir, "storyboard.json");
 const legacyMediaDir = join(dataDir, "media");
 const port = Number(args.port || process.env.PORT || process.env.CODEX_STORYBOARD_PORT || 43218);
 let generationMutationQueue = Promise.resolve();
+let apiQueue = Promise.resolve();
+const audioJobs = new Set();
+function serializeApi(operation) {
+  const result = apiQueue.then(operation, operation);
+  apiQueue = result.catch(() => {});
+  return result;
+}
+async function atomicJson(path, value) {
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(temporary, path);
+}
 
 const aspectRatios = {
   "9:16": { width: 1080, height: 1920 },
@@ -38,6 +55,8 @@ const aspectRatios = {
 };
 
 const contentTypes = {
+  ".wav": "audio/wav",
+  ".mp3": "audio/mpeg",
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -163,6 +182,8 @@ function normalizeShot(shot = {}) {
     mediaType: shot.mediaType === "video" ? "video" : "image",
     duration: Number.isFinite(Number(shot.duration)) ? Number(shot.duration) : 5,
     dialogue: String(shot.dialogue || ""),
+    timeStart: Number.isFinite(shot.timeStart) ? shot.timeStart : null,
+    timeEnd: Number.isFinite(shot.timeEnd) ? shot.timeEnd : null,
     visualPrompt: String(shot.visualPrompt || ""),
     generator: ["manual", "image-gen", "hyperframes", "remotion"].includes(shot.generator)
       ? shot.generator
@@ -174,6 +195,7 @@ function normalizeShot(shot = {}) {
     generationError: String(shot.generationError || ""),
     generationRequestedAt: shot.generationRequestedAt || null,
     generationStartedAt: shot.generationStartedAt || null,
+    generationHeartbeatAt: shot.generationHeartbeatAt || null,
     generationCompletedAt: shot.generationCompletedAt || null
   };
 }
@@ -199,6 +221,7 @@ function normalizeCover(cover = {}, type = "vertical") {
     generationError: String(cover.generationError || ""),
     generationRequestedAt: cover.generationRequestedAt || null,
     generationStartedAt: cover.generationStartedAt || null,
+    generationHeartbeatAt: cover.generationHeartbeatAt || null,
     generationCompletedAt: cover.generationCompletedAt || null
   };
 }
@@ -217,6 +240,7 @@ function normalizeProject(project = {}) {
     title: String(project.title || "未命名项目").trim() || "未命名项目",
     aspectRatio: normalizeAspectRatio(project.aspectRatio),
     scriptDraft: String(project.scriptDraft || ""),
+    audio: project.audio && typeof project.audio === "object" ? project.audio : { takes: [], selectedId: "", status: "idle" },
     hasDesign: Boolean(project.hasDesign),
     covers: normalizeCovers(project.covers),
     shots: Array.isArray(project.shots) ? project.shots.map(normalizeShot) : [],
@@ -246,7 +270,7 @@ async function readProjectsIndex() {
 }
 
 async function saveProjectsIndex(index) {
-  await writeFile(projectsFile, `${JSON.stringify(index, null, 2)}\n`, "utf8");
+  await atomicJson(projectsFile, index);
   return index;
 }
 
@@ -255,6 +279,12 @@ async function readProject(projectId) {
   try {
     const project = normalizeProject(JSON.parse(await readFile(projectFile(projectId), "utf8")));
     project.hasDesign = await exists(projectDesignFile(projectId));
+    if (["generating", "aligning"].includes(project.audio.status) && !audioJobs.has(projectId)) {
+      project.audio.status = "failed";
+      project.audio.error = "上次配音任务已中断，请重试";
+      return saveProject(project);
+    }
+    if (expireTasks(project)) return saveProject(project);
     return project;
   } catch (error) {
     if (error.code === "ENOENT") throw Object.assign(new Error("Project not found"), { status: 404 });
@@ -263,10 +293,10 @@ async function readProject(projectId) {
 }
 
 async function saveProject(project) {
-  const next = normalizeProject({ ...project, updatedAt: new Date().toISOString() });
+  const next = normalizeProject({ ...project, updatedAt: new Date(Math.max(Date.now(), Date.parse(project.updatedAt || 0) + 1 || 0)).toISOString() });
   await mkdir(projectMediaDir(next.id), { recursive: true });
   next.hasDesign = await exists(projectDesignFile(next.id));
-  await writeFile(projectFile(next.id), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  await atomicJson(projectFile(next.id), next);
 
   const index = await readProjectsIndex();
   const record = {
@@ -641,6 +671,7 @@ function generationTask(project, item, type = "shot") {
     status: item.generationStatus,
     generator: isCover ? "image-gen" : item.generator,
     mediaType: isCover ? "image" : item.mediaType,
+    rollType: isCover ? null : item.rollType,
     duration: isCover ? 0 : item.duration,
     dialogue: isCover ? item.title : item.dialogue,
     visualPrompt: isCover ? item.prompt : item.visualPrompt,
@@ -948,10 +979,14 @@ async function handleProjectsApi(request, response, url) {
   if (request.method === "PUT") {
     const current = await readProject(projectId);
     const body = await readBody(request);
+    if (body.updatedAt && body.updatedAt !== current.updatedAt) {
+      return sendError(response, 409, "项目已在其他窗口或生成任务中更新，请保留当前文本并刷新后重试");
+    }
     return sendJson(response, 200, await saveProject({
       ...current,
       title: body.title,
       aspectRatio: body.aspectRatio,
+      scriptDraft: body.scriptDraft ?? current.scriptDraft,
       covers: body.covers || current.covers,
       shots: body.shots
     }));
@@ -1201,7 +1236,7 @@ async function handleGenerationApi(request, response, url) {
   }
 
   const taskMatch = url.pathname.match(
-    /^\/api\/generation\/tasks\/([^/]+)\/(claim|complete|fail|cancel)$/
+    /^\/api\/generation\/tasks\/([^/]+)\/(claim|complete|fail|cancel|heartbeat)$/
   );
   if (taskMatch && request.method === "POST") {
     return mutateGenerationTask(async () => {
@@ -1211,12 +1246,17 @@ async function handleGenerationApi(request, response, url) {
       const { project, item, taskType } = found;
       const body = await readBody(request);
 
+      if (["complete", "fail", "heartbeat"].includes(action) && !["pending", "processing"].includes(item.generationStatus)) {
+        return sendError(response, 409, `Task is ${item.generationStatus}`);
+      }
+      if (action === "heartbeat") item.generationHeartbeatAt = new Date().toISOString();
       if (action === "claim") {
         if (item.generationStatus !== "pending") {
           return sendError(response, 409, `Task is ${item.generationStatus}`);
         }
         item.generationStatus = "processing";
         item.generationStartedAt = new Date().toISOString();
+        item.generationHeartbeatAt = item.generationStartedAt;
       }
 
       if (action === "complete") {
@@ -1232,7 +1272,7 @@ async function handleGenerationApi(request, response, url) {
       }
 
       if (action === "cancel") {
-        if (item.generationStatus !== "pending") {
+        if (!["pending", "processing"].includes(item.generationStatus)) {
           return sendError(response, 409, `Task is ${item.generationStatus}`);
         }
         item.generationStatus = item.mediaUrl ? "ready" : "idle";
@@ -1258,11 +1298,84 @@ async function handleGenerationApi(request, response, url) {
 }
 
 async function handleApi(request, response, url) {
+  const audioMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/audio\/(generate|select|align|apply-durations)$/);
+  if (audioMatch && request.method === "POST") {
+    const [, projectId, action] = audioMatch;
+    const project = await readProject(projectId);
+    const body = await readBody(request);
+    if (audioJobs.has(projectId)) return sendError(response, 409, "配音任务正在处理");
+    if (["align", "apply-durations"].includes(action)) {
+      const take = project.audio.takes.find(t => t.id === project.audio.selectedId);
+      if (!take) return sendError(response, 400, "请先生成或选择配音");
+      if (action === "apply-durations") {
+        try { project.shots = applyTiming(project.shots, take, body.timeline || take.timeline); }
+        catch (error) { return sendError(response, 409, error.message); }
+        if (body.timeline) take.timeline = body.timeline;
+        take.appliedAt = new Date().toISOString();
+        return sendJson(response, 200, await saveProject(project));
+      }
+      if (spokenText(project.shots) !== take.text) return sendError(response, 409, "当前镜头台词与此配音文本不同，请重新生成配音后对齐");
+      audioJobs.add(projectId);
+      project.audio.status = "aligning";
+      project.audio.error = "";
+      const saved = await saveProject(project);
+      void alignVoice(join(projectMediaDir(projectId), basename(take.fileName)), project.shots, take.durationMs).then(alignment => serializeApi(async () => {
+        const current = await readProject(projectId);
+        const version = current.audio.takes.find(t => t.id === take.id);
+        if (!version) throw new Error("配音版本已移除");
+        version.timeline = alignment.timeline;
+        version.recognition = alignment.recognition;
+        version.dialogueKey = dialogueKey(project.shots);
+        version.alignEngine = alignment.engine;
+        current.audio.status = "ready";
+        await saveProject(current);
+      })).catch(error => serializeApi(async () => {
+        try {
+          const current = await readProject(projectId);
+          current.audio.status = "failed"; current.audio.error = error.message;
+          await saveProject(current);
+        } catch (saveError) { console.error(saveError); }
+      })).finally(() => audioJobs.delete(projectId));
+      return sendJson(response, 202, saved);
+    }
+    if (action === "select") {
+      if (!project.audio.takes.some(take => take.id === body.takeId)) return sendError(response, 404, "配音版本不存在");
+      project.audio.selectedId = body.takeId;
+      return sendJson(response, 200, await saveProject(project));
+    }
+    const text = project.shots.map(shot => shot.dialogue.trim()).filter(Boolean).join("\n") || project.scriptDraft.trim();
+    if (!text || text.length > 10000) return sendError(response, 400, "请填写台词或脚本，最多 10000 字");
+    const id = createId("voice");
+    const instruction = String(body.instruction || "").slice(0, 1000);
+    project.audio.status = "generating";
+    project.audio.error = "";
+    project.audio.startedAt = new Date().toISOString();
+    audioJobs.add(projectId);
+    const saved = await saveProject(project);
+    void generateVoice({ directory: projectMediaDir(projectId), id, text, instruction }).then(result => serializeApi(async () => {
+      const current = await readProject(projectId);
+      current.audio.takes.push({ id, ...result, url: mediaUrl(projectId, result.fileName), text, instruction, createdAt: new Date().toISOString() });
+      current.audio.selectedId = id;
+      current.audio.status = "ready";
+      await saveProject(current);
+    })).catch(error => serializeApi(async () => {
+      try {
+        const current = await readProject(projectId);
+        current.audio.status = "failed";
+        current.audio.error = String(error.message).slice(-1500);
+        await saveProject(current);
+      } catch (saveError) { console.error(saveError); }
+    })).finally(() => audioJobs.delete(projectId));
+    return sendJson(response, 202, saved);
+  }
+  if (request.method === "GET" && url.pathname === "/api/environment") {
+    return sendJson(response, 200, await inspectEnvironment());
+  }
   if (request.method === "GET" && url.pathname === "/api/health") {
     return sendJson(response, 200, {
       ok: true,
       app: "codex-storyboard",
-      version: "0.5.4",
+      version: "0.6.0",
       dataDir,
       publicDir
     });
@@ -1278,7 +1391,9 @@ async function handleApi(request, response, url) {
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
-    if (url.pathname.startsWith("/api/")) return await handleApi(request, response, url);
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) return sendError(response, 403, "Local host required");
+    if (request.headers.origin && request.headers.origin !== url.origin) return sendError(response, 403, "Cross-origin requests are not allowed");
+    if (url.pathname.startsWith("/api/")) return await serializeApi(() => handleApi(request, response, url));
 
     const mediaMatch = url.pathname.match(/^\/media\/([^/]+)\/([^/]+)$/);
     if (mediaMatch) {

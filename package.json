@@ -1,9 +1,10 @@
 {
   "name": "codex-storyboard",
   "private": true,
-  "version": "0.5.4",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
     "start": "node server.mjs --data-dir ./data",
     "check": "node --check server.mjs && node --check public/app.js && node --check plugins/codex-storyboard/mcp/server.mjs && node --check plugins/codex-storyboard/app/server.mjs && node --check plugins/codex-storyboard/app/public/app.js"
   }

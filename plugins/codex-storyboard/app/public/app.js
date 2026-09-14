@@ -1,3 +1,5 @@
+import { createAutosave } from "./autosave.js";
+import { inspectPacing } from "./pacing.js";
 const projectsView = document.querySelector("#projects-view");
 const storyboardView = document.querySelector("#storyboard-view");
 const scriptPanel = document.querySelector("#script-panel");
@@ -164,8 +166,6 @@ Rules:
 
 let project = null;
 let projects = [];
-let saveTimer;
-let savePromise = Promise.resolve();
 let pollTimer;
 let activeSelect;
 let dialogMode = "create";
@@ -343,7 +343,7 @@ function coverGenerationLabel(cover) {
 
 function coverGenerateLabel(cover) {
   if (cover.generationStatus === "pending") return "取消队列";
-  if (cover.generationStatus === "processing") return "生成中";
+  if (cover.generationStatus === "processing") return "释放任务";
   if (!canGenerateCover(cover)) return "填写封面提示词";
   return cover.generationStatus === "ready" || cover.generationStatus === "failed"
     ? "重新生成封面"
@@ -361,7 +361,7 @@ function canGenerateCover(cover) {
 function generationButtonLabel(shot) {
   if (shot.generator === "manual") return shot.mediaUrl ? "重新上传" : "本地上传";
   if (shot.generationStatus === "pending") return "取消队列";
-  if (shot.generationStatus === "processing") return "生成中";
+  if (shot.generationStatus === "processing") return "释放任务";
   if (!shot.visualPrompt.trim() && !["pending", "processing"].includes(shot.generationStatus)) {
     return "填写画面描述";
   }
@@ -737,7 +737,8 @@ function currentProjectId() {
   return decodeURIComponent(location.pathname.match(/^\/project\/([^/]+)\/?$/)?.[1] || "");
 }
 
-function navigate(path) {
+async function navigate(path) {
+  try { await flushSave(); } catch (error) { showToast(error.message, "error"); return; }
   history.pushState({}, "", path);
   route();
 }
@@ -851,6 +852,17 @@ function showProjectsView() {
   return loadProjects();
 }
 
+function syncStoryboardViewport() {
+  const root = document.documentElement;
+  if (storyboardView.hidden || !window.matchMedia("(max-width: 1180px)").matches) {
+    root.style.removeProperty("--storyboard-topbar-height");
+    return;
+  }
+  const topbar = document.querySelector(".topbar");
+  const height = Math.ceil(topbar?.getBoundingClientRect().height || 160);
+  root.style.setProperty("--storyboard-topbar-height", `${height}px`);
+}
+
 function showStoryboardView(projectId) {
   projectsView.hidden = true;
   stylesView.hidden = true;
@@ -858,6 +870,8 @@ function showStoryboardView(projectId) {
   storyboardView.hidden = false;
   document.querySelector("#home-actions").hidden = true;
   document.querySelector("#storyboard-actions").hidden = false;
+  syncStoryboardViewport();
+  requestAnimationFrame(syncStoryboardViewport);
   return loadProject(projectId);
 }
 
@@ -872,6 +886,7 @@ function showHomeTab(tab) {
   storyboardView.hidden = true;
   document.querySelector("#home-actions").hidden = false;
   document.querySelector("#storyboard-actions").hidden = true;
+  syncStoryboardViewport();
   document.title = "Codex 分镜台";
   if (tab === "styles") loadStylesView();
 }
@@ -899,21 +914,118 @@ function renderScriptPanel() {
   scriptCount.textContent = `${value.trim().length} 字`;
 }
 
+function buildVoiceTimelinePrompt() {
+  const audio = project?.audio || {};
+  const takes = Array.isArray(audio.takes) ? audio.takes : [];
+  const take = takes.find(item => item.id === audio.selectedId);
+  const timeline = Array.isArray(take?.timeline)
+    ? take.timeline.filter(segment => (
+      String(segment.text || "").trim() &&
+      Number.isFinite(Number(segment.start)) &&
+      Number.isFinite(Number(segment.end))
+    ))
+    : [];
+  const isAligned = Boolean(
+    take?.alignEngine?.startsWith("whisper") &&
+    timeline.length
+  );
+
+  if (!isAligned) {
+    return [
+      "配音时间轴：",
+      "当前没有已生成且完成识别对齐的配音时间轴，请忽略配音时间轴，不要自行估算时间。"
+    ];
+  }
+
+  return [
+    "配音时间轴（当前选中的已生成并完成识别对齐版本，单位：毫秒）：",
+    ...timeline.map(segment => `[${segment.start}ms - ${segment.end}ms] ${String(segment.text).trim()}`)
+  ];
+}
+
 function buildStoryboardPrompt() {
   const draft = (project.scriptDraft || "").trim();
   const ratio = project.aspectRatio || "16:9";
   return [
-    `请基于下面的完整脚本，为 Codex 分镜台项目「${project.title}」生成分镜。`,
+    `请基于下面的口播文案和（如果存在）第一步生成的配音时间轴，站在导演视角，为 Codex 分镜台项目「${project.title}」先生成一份可以直接指导剪辑、素材准备和动画制作的视觉编排表。`,
     "",
-    "要求：",
+    "现在只完成视觉编排阶段：先输出视觉编排表，不要直接制作图片、动画或视频，也不要调用任何素材生成工具。",
+    "",
+    "## 我提供的内容",
+    "口播文案：",
+    draft || "（这里还没有填写脚本草稿）",
+    "",
+    ...buildVoiceTimelinePrompt(),
+    "",
+    "## 基础项目约束",
     `- 画面比例：${ratio}`,
-    "- 按镜头拆分，每个镜头包含 rollType、mediaType、duration、dialogue、visualPrompt、generator、notes。",
+    "- 后续落地到 Codex 分镜台时，每个镜头需要能够明确映射到 rollType、mediaType、duration、dialogue、visualPrompt、generator、notes。",
     "- A-ROLL 用于真人口播或主讲；B-ROLL 用于画面补充、录屏、数据图、动画。",
     "- generator 只能使用 manual、image-gen、hyperframes、remotion。",
     "- visualPrompt 要能直接指导图片或视频素材生成。",
     "",
-    "完整脚本：",
-    draft || "（这里还没有填写脚本草稿）"
+    "## 编排原则",
+    "先理解整篇文案的逻辑，再把它拆成完整的语义段落。不要按标点、句子长度或每次停顿机械切镜。",
+    "",
+    "每个镜头都要先回答：",
+    "1. 这一段最需要观众理解什么？",
+    "2. 什么画面能让这句话变得更具体、更容易理解？",
+    "3. 画面中的主体要发生什么变化？",
+    "4. 镜头最后停留在什么结果上？",
+    "5. 它如何承接上一镜，并自然进入下一镜？",
+    "",
+    "## 画面类型",
+    "根据内容选择最合适的表达方式：",
+    "- 人物画面：适合情绪、经历、态度和个人表达；",
+    "- 场景画面：适合还原具体情境、动作和使用过程；",
+    "- 真实素材：适合证据、案例、产品、界面和操作展示；",
+    "- 信息图形：适合步骤、关系、比较、流程、数据和因果；",
+    "- 文字动效：适合金句、关键词、概念替换和结论强调。",
+    "不要为了丰富而频繁切换画面。每次变化都必须帮助观众理解内容。",
+    "如果文案提到真实产品、界面、数据、案例或用户素材，但我没有提供相应内容，请标记“需要补充素材”，不要自行编造。",
+    "",
+    "## 时间与节奏",
+    "如果上面提供了配音时间轴，时间以它为准，不要自行估算，也不要修改时间戳。每个镜头的起止时间必须落在时间轴的短语边界上，不能跨语义切开。",
+    "如果上面明确写着没有可用配音时间轴，请忽略配音时间轴，不要生成或猜测任何时间戳；先按语义段落和逻辑关系完成编排。",
+    "镜头时长较长时，需要安排与旁白对应的内部变化，例如：",
+    "- 主体出现；",
+    "- 重点被选中或放大；",
+    "- 两个方案形成对比；",
+    "- 步骤逐项展开；",
+    "- 信息从混乱变得清晰；",
+    "- 最终结论落定。",
+    "入场、呼吸动画、背景循环和字幕出现不算有效的信息变化。避免画面长时间没有新内容，也不要让动画为了动而动。",
+    "",
+    "## 输出格式",
+    "请使用以下表格：",
+    "| 镜头 | 时间 | 配音文案 | 画面类型 | 画面设计 | 动态变化 | 画面衔接 |",
+    "|---|---|---|---|---|---|---|",
+    "",
+    "填写要求：",
+    "- 镜头：从 S001 开始连续编号；",
+    "- 时间：如果有配音时间轴，填写来自时间轴的开始与结束时间（毫秒）；如果没有，填写“待录音后确定”，不要自行编造时间；",
+    "- 配音文案：保留对应原文，不要擅自改写；",
+    "- 画面类型：从人物、场景、真实素材、信息图形、文字动效中选择；",
+    "- 画面设计：说明主体、构图、景别、关键元素和最终画面；",
+    "- 动态变化：按照旁白顺序写清第一次、第二次和第三次变化；没有必要时不要强行凑数；",
+    "- 画面衔接：说明前后镜头如何通过主体、动作、方向、位置、颜色或意义自然接续，不要只写“淡入淡出”。",
+    "",
+    "## 全片检查",
+    "完成表格后，再检查：",
+    "1. 画面是否真正帮助理解文案；",
+    "2. 是否存在连续重复、节奏单一的问题；",
+    "3. 是否有镜头变化太少或信息过载；",
+    "4. 是否使用了未经提供或无法核实的素材；",
+    "5. 重要信息是否得到足够的视觉强调；",
+    "6. 前后镜头是否连贯；",
+    "7. 哪些镜头需要我补充素材或做出选择。",
+    "",
+    "最后单独列出：",
+    "- 需要补充的素材；",
+    "- 需要确认的视觉方向；",
+    "- 制作难度较高的镜头。",
+    "",
+    "再次强调：现在先生成视觉编排表，不要直接制作图片、动画或视频。"
   ].join("\n");
 }
 
@@ -1179,8 +1291,7 @@ function renderCoverPanel() {
   coverStatus.title = cover.generationError || "";
   document.querySelector("#generate-cover").textContent = coverGenerateLabel(cover);
   document.querySelector("#generate-cover").disabled =
-    cover.generationStatus === "processing" ||
-    (cover.generationStatus !== "pending" && !canGenerateCover(cover));
+    (!["pending", "processing"].includes(cover.generationStatus) && !canGenerateCover(cover));
   document.querySelector("#delete-cover").disabled =
     cover.generationStatus === "processing" || !cover.mediaUrl;
   document.querySelector("#delete-cover-reference").disabled =
@@ -1311,6 +1422,10 @@ async function queueCoverGeneration(force = false) {
   ensureCovers();
   const cover = project.covers[activeCoverType];
   if (cover.generationStatus === "pending") return cancelCoverGeneration(cover);
+  if (cover.generationStatus === "processing") {
+    if (confirm("释放此封面任务？旧结果将不再回填。")) return cancelCoverGeneration(cover);
+    return;
+  }
   if (!coverUsesCustomPrompt(cover)) {
     cover.prompt = coverPresetByValue(cover.preset).buildPrompt(coverPromptContext());
   }
@@ -1331,8 +1446,9 @@ async function queueCoverGeneration(force = false) {
 }
 
 async function cancelCoverGeneration(cover) {
-  saveStatus.textContent = "取消封面生成任务…";
   try {
+    await flushSave();
+    saveStatus.textContent = "取消封面生成任务…";
     const result = await api(
       `/api/generation/tasks/${encodeURIComponent(cover.generationTaskId)}/cancel`,
       { method: "POST", body: JSON.stringify({}) }
@@ -1595,44 +1711,42 @@ function renderSelect(container, field, shot, onChange) {
 }
 
 function updateSummary() {
+  const warnings = inspectPacing(project.shots);
+  document.querySelector("#pacing-summary").textContent = warnings.length ? `节奏检查 · ${warnings.length} 条建议` : "节奏检查 · 无明显异常";
+  document.querySelector("#pacing-results").replaceChildren(...warnings.map(message => {
+    const item = document.createElement("li"); item.textContent = message; return item;
+  }));
   durationTotal.textContent = formatDuration(
     project.shots.reduce((sum, shot) => sum + Number(shot.duration || 0), 0)
   );
 }
 
 function queueSave() {
-  saveStatus.textContent = "保存中…";
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    savePromise = saveProject();
-  }, 450);
+  autosave.schedule();
 }
 
 async function flushSave() {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-    savePromise = saveProject();
-  }
-  await savePromise;
+  if (!await autosave.flush()) throw new Error("尚有未保存的修改，请重试保存后继续");
 }
 
-async function saveProject() {
-  try {
-    const saved = await api(`/api/projects/${encodeURIComponent(project.id)}`, {
+const autosave = createAutosave({
+  read: () => project,
+  write: (snapshot) => api(`/api/projects/${encodeURIComponent(snapshot.id)}`, {
       method: "PUT",
-      body: JSON.stringify(project)
-    });
-    project.updatedAt = saved.updatedAt;
-    saveStatus.textContent = "已保存";
-  } catch (error) {
-    saveStatus.textContent = "保存失败";
-    showToast(error.message, "error");
-  }
-}
+      body: JSON.stringify(snapshot)
+    }),
+  onSaved: (saved) => { if (project?.id === saved.id) project.updatedAt = saved.updatedAt; },
+  onState: (state) => { saveStatus.textContent = ({ dirty: "待保存", saving: "保存中…", saved: "已保存", error: "保存失败，点击重试" })[state]; },
+  onError: (error) => showToast(error.message, "error")
+});
+saveStatus.addEventListener("click", () => autosave.flush());
+window.addEventListener("beforeunload", (event) => {
+  if (autosave.dirty) { event.preventDefault(); event.returnValue = ""; }
+});
+window.addEventListener("online", () => autosave.flush());
 
 function renderStoryboard() {
+  renderVoice();
   closeSelect();
   ensureCovers();
   project.scriptDraft = String(project.scriptDraft || "");
@@ -1685,11 +1799,14 @@ function renderStoryboard() {
     const generateButton = row.querySelector(".generate-shot");
     generateButton.textContent = generationButtonLabel(shot);
     generateButton.disabled =
-      shot.generationStatus === "processing" ||
       (shot.generator !== "manual" && !shot.visualPrompt.trim());
     generateButton.dataset.action = shot.generationStatus === "pending" ? "cancel" : "generate";
     generateButton.addEventListener("click", () => {
       if (shot.generator === "manual") return chooseUpload(shot.id);
+      if (shot.generationStatus === "processing") {
+        if (confirm("释放此任务？外部生成进程可能仍在运行，但旧结果将不再回填。")) return cancelGeneration(shot);
+        return;
+      }
       if (shot.generationStatus === "pending") return cancelGeneration(shot);
       return queueGeneration(
         [shot.id],
@@ -1943,8 +2060,9 @@ async function uploadProjectDesignFromContent(projectId, content) {
 }
 
 async function cancelGeneration(shot) {
-  saveStatus.textContent = "取消生成任务…";
   try {
+    await flushSave();
+    saveStatus.textContent = "取消生成任务…";
     const result = await api(
       `/api/generation/tasks/${encodeURIComponent(shot.generationTaskId)}/cancel`,
       { method: "POST", body: JSON.stringify({}) }
@@ -1985,6 +2103,7 @@ async function queueGeneration(shotIds, force = false) {
 }
 
 async function addShot() {
+  await flushSave();
   project = await api(`/api/projects/${encodeURIComponent(project.id)}/shots`, {
     method: "POST",
     body: JSON.stringify(emptyShot())
@@ -1996,14 +2115,18 @@ async function addShot() {
 function startPolling() {
   clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
-    if (!project || saveStatus.textContent === "保存中…") return;
+    if (!project || autosave.dirty) return;
+    const polledId = project.id;
+    const polledVersion = project.updatedAt;
     try {
       const remote = await api(`/api/projects/${encodeURIComponent(project.id)}`);
+      if (project?.id !== polledId || autosave.dirty || project.updatedAt !== polledVersion) return;
       if (remote.updatedAt !== project.updatedAt) {
         project = remote;
         renderStoryboard();
       }
-    } catch {
+    } catch (error) {
+      if (error.status !== 404 || project?.id !== polledId || autosave.dirty) return;
       clearInterval(pollTimer);
       history.replaceState({}, "", "/");
       await showProjectsView();
@@ -2013,6 +2136,144 @@ function startPolling() {
 }
 
 renderRatioOptions();
+function renderVoice() {
+  const audio = project?.audio || { takes: [] };
+  const takes = Array.isArray(audio.takes) ? audio.takes : [];
+  const takeIndex = takes.findIndex(item => item.id === audio.selectedId);
+  const take = takeIndex >= 0 ? takes[takeIndex] : null;
+  const currentMeta = document.querySelector("#voice-current-meta");
+  const busy = ["generating", "aligning"].includes(audio.status);
+  const status = document.querySelector("#voice-status");
+  status.textContent = ({ generating: "生成中", aligning: "对齐中", ready: "已就绪", failed: "需要处理" })[audio.status] || "未生成";
+  status.dataset.status = audio.status || "idle";
+  currentMeta.textContent = take
+    ? `当前使用 · 版本 ${String(takeIndex + 1).padStart(2, "0")} · ${(take.durationMs / 1000).toFixed(2)} 秒`
+    : "尚未生成配音";
+  document.querySelector("#voice-error").textContent = audio.error || "";
+  document.querySelector("#voice-generate").disabled = busy;
+  document.querySelector("#voice-align").disabled = busy || !take;
+  document.querySelector("#voice-apply").disabled = busy || !take?.timeline?.length;
+  document.querySelector("#timing-note").hidden = false;
+  document.querySelector("#timing-note").textContent = take?.alignEngine?.startsWith("whisper")
+    ? "Whisper 已完成本地识别，可试听后微调时间。无台词镜头保留原时长。"
+    : take ? "尚未完成识别对齐，请先点击“识别并对齐”。" : "生成配音后，可识别台词并调整镜头时长。";
+  document.querySelector("#voice-timeline").replaceChildren(...(take?.timeline || []).map(segment => {
+    const row = document.createElement("div"); row.className = "timing-row"; row.dataset.shotId = segment.shotId;
+    const text = document.createElement("span"); text.textContent = segment.text;
+    row.append(text);
+    for (const [key, label] of [["start", "起点（秒）"], ["end", "终点（秒）"]]) {
+      const wrapper = document.createElement("label"); wrapper.textContent = label;
+      const input = document.createElement("input"); input.type = "number"; input.min = "0"; input.step = "0.01";
+      input.max = String(take.durationMs / 1000); input.value = String(segment[key] / 1000); input.dataset.timeKey = key;
+      wrapper.append(input); row.append(wrapper);
+    }
+    return row;
+  }));
+  document.querySelector("#voice-version-count").textContent = takes.length ? `${takes.length} 条` : "暂无";
+  const versionList = document.querySelector("#voice-takes");
+  if (!takes.length) {
+    const empty = document.createElement("p");
+    empty.className = "voice-take-empty";
+    empty.textContent = "生成第一条配音后，所有版本都会集中显示在这里。";
+    versionList.replaceChildren(empty);
+    return;
+  }
+  versionList.replaceChildren(...takes.map((item, index) => {
+    const selected = item.id === audio.selectedId;
+    const card = document.createElement("article");
+    card.className = "voice-take-card";
+    card.dataset.selected = String(selected);
+
+    const header = document.createElement("div");
+    header.className = "voice-take-header";
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `版本 ${String(index + 1).padStart(2, "0")}`;
+    const meta = document.createElement("span");
+    meta.textContent = `${(item.durationMs / 1000).toFixed(2)} 秒 · ${item.alignEngine?.startsWith("whisper") ? "已对齐" : "未对齐"}`;
+    copy.append(title, meta);
+    const choose = document.createElement("button");
+    choose.type = "button";
+    choose.className = selected ? "voice-take-selected" : "voice-take-select";
+    choose.textContent = selected ? "当前使用" : "使用此版本";
+    choose.disabled = busy || selected;
+    choose.setAttribute("aria-pressed", String(selected));
+    choose.addEventListener("click", () => voiceAction("select", { takeId: item.id }));
+    header.append(copy, choose);
+    card.append(header);
+
+    if (item.url) {
+      const player = document.createElement("audio");
+      player.controls = true;
+      player.preload = "metadata";
+      player.src = item.url;
+      player.setAttribute("aria-label", `试听配音版本 ${index + 1}`);
+      card.append(player);
+    }
+    return card;
+  }));
+}
+async function voiceAction(action, payload = {}) {
+  try {
+    await flushSave();
+    project = await api(`/api/projects/${encodeURIComponent(project.id)}/audio/${action}`, { method: "POST", body: JSON.stringify(payload) });
+    renderStoryboard();
+  } catch (error) { showToast(error.message, "error"); }
+}
+document.querySelector("#voice-generate").addEventListener("click", () => {
+  if (!confirm("将镜头台词（无台词时使用脚本）发送到 VoxCPM 在线服务生成配音，继续？")) return;
+  voiceAction("generate", { instruction: document.querySelector("#voice-instruction").value });
+});
+document.querySelector("#voice-align").addEventListener("click", () => voiceAction("align"));
+document.querySelector("#voice-apply").addEventListener("click", () => {
+  const timeline = [...document.querySelectorAll(".timing-row")].map(row => ({
+    shotId: row.dataset.shotId, text: row.querySelector("span").textContent,
+    start: Math.round(Number(row.querySelector('[data-time-key="start"]').value) * 1000),
+    end: Math.round(Number(row.querySelector('[data-time-key="end"]').value) * 1000)
+  }));
+  if (confirm("将覆盖有台词镜头的时长，无台词镜头保持不变。继续？")) voiceAction("apply-durations", { timeline });
+});
+document.querySelector("#environment-check").addEventListener("click", async () => {
+  const dialog = document.querySelector("#environment-dialog");
+  const results = document.querySelector("#environment-results");
+  const summaryTitle = document.querySelector("#environment-summary-title");
+  const summaryDetail = document.querySelector("#environment-summary-detail");
+  const summaryDot = document.querySelector("#environment-summary-dot");
+  summaryTitle.textContent = "检查中…";
+  summaryDetail.textContent = "正在读取本机依赖与会话能力";
+  summaryDot.dataset.status = "loading";
+  results.replaceChildren();
+  dialog.showModal();
+  try {
+    const result = await api("/api/environment");
+    const missing = result.checks.filter(check => check.status === "missing").length;
+    const session = result.checks.filter(check => check.status === "session").length;
+    summaryTitle.textContent = missing ? "有工具尚未就绪" : session ? "部分能力需要确认" : "环境已就绪";
+    summaryDetail.textContent = missing ? `${missing} 项本机依赖未检测到` : session ? "插件能力由当前 Codex 会话决定" : "本机依赖检查通过";
+    summaryDot.dataset.status = missing ? "missing" : session ? "session" : "ready";
+    results.replaceChildren(...result.checks.map(check => {
+      const row = document.createElement("div");
+      row.className = "environment-row";
+      row.dataset.status = check.status;
+      const heading = document.createElement("div");
+      heading.className = "environment-row-heading";
+      const name = document.createElement("strong");
+      name.textContent = check.name;
+      const state = document.createElement("span");
+      state.className = "environment-state";
+      state.textContent = ({ ready: "已就绪", missing: "未安装", session: "需确认" })[check.status];
+      heading.append(name, state);
+      const detail = document.createElement("small");
+      detail.textContent = check.detail;
+      row.append(heading, detail);
+      return row;
+    }));
+  } catch (error) {
+    summaryTitle.textContent = "检查失败";
+    summaryDetail.textContent = error.message;
+    summaryDot.dataset.status = "missing";
+  }
+});
 renderCoverPresetOptions();
 updateThemeButtons();
 
@@ -2165,8 +2426,7 @@ coverPrompt.addEventListener("input", () => {
   document.querySelector("#generate-cover").textContent =
     coverGenerateLabel(cover);
   document.querySelector("#generate-cover").disabled =
-    cover.generationStatus === "processing" ||
-    (cover.generationStatus !== "pending" && !canGenerateCover(cover));
+    (!["pending", "processing"].includes(cover.generationStatus) && !canGenerateCover(cover));
   queueSave();
 });
 document.querySelector("#upload-cover").addEventListener("click", () => {
@@ -2219,9 +2479,18 @@ document.addEventListener("pointerdown", (event) => {
   if (activeSelect.menu.contains(event.target) || activeSelect.trigger.contains(event.target)) return;
   closeSelect();
 });
-window.addEventListener("resize", () => closeSelect());
+window.addEventListener("resize", () => {
+  closeSelect();
+  syncStoryboardViewport();
+});
 document.querySelector(".table-shell").addEventListener("scroll", () => closeSelect(), { passive: true });
-window.addEventListener("popstate", route);
+window.addEventListener("popstate", async () => {
+  try { await flushSave(); await route(); }
+  catch (error) {
+    if (project) history.pushState({}, "", `/project/${encodeURIComponent(project.id)}`);
+    showToast(error.message, "error");
+  }
+});
 
 // ── 风格库事件 ──
 document.querySelectorAll("[data-home-tab]").forEach((button) => {
