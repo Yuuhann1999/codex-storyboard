@@ -2,6 +2,12 @@ import { writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { run, python, ffmpeg, ffprobe } from "./runtime.mjs";
+import { estimateTiming } from "./timing.mjs";
+
+export async function alignVoice(path, shots, totalMs) {
+  const log = await run(ffmpeg, ["-hide_banner", "-i", path, "-af", "silencedetect=noise=-32dB:d=0.32", "-f", "null", "-"], 120000);
+  return estimateTiming(shots, totalMs, log);
+}
 
 export async function audioDuration(path) {
   const result = await run(ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "json", path]);

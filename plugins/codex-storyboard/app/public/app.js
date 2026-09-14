@@ -2026,6 +2026,21 @@ function renderVoice() {
   document.querySelector("#voice-status").textContent = ({ generating: "生成中", aligning: "对齐中", ready: "已就绪", failed: "处理失败" })[audio.status] || "";
   document.querySelector("#voice-error").textContent = audio.error || "";
   document.querySelector("#voice-generate").disabled = busy;
+  document.querySelector("#voice-align").disabled = busy || !take;
+  document.querySelector("#voice-apply").disabled = busy || !take?.timeline?.length;
+  document.querySelector("#timing-note").hidden = !take?.timeline?.length;
+  document.querySelector("#voice-timeline").replaceChildren(...(take?.timeline || []).map(segment => {
+    const row = document.createElement("div"); row.className = "timing-row"; row.dataset.shotId = segment.shotId;
+    const text = document.createElement("span"); text.textContent = segment.text;
+    row.append(text);
+    for (const [key, label] of [["start", "起点（秒）"], ["end", "终点（秒）"]]) {
+      const wrapper = document.createElement("label"); wrapper.textContent = label;
+      const input = document.createElement("input"); input.type = "number"; input.min = "0"; input.step = "0.01";
+      input.max = String(take.durationMs / 1000); input.value = String(segment[key] / 1000); input.dataset.timeKey = key;
+      wrapper.append(input); row.append(wrapper);
+    }
+    return row;
+  }));
   document.querySelector("#voice-takes").replaceChildren(...audio.takes.map((item, index) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -2046,6 +2061,15 @@ async function voiceAction(action, payload = {}) {
 document.querySelector("#voice-generate").addEventListener("click", () => {
   if (!confirm("将镜头台词（无台词时使用脚本）发送到 VoxCPM 在线服务生成配音，继续？")) return;
   voiceAction("generate", { instruction: document.querySelector("#voice-instruction").value });
+});
+document.querySelector("#voice-align").addEventListener("click", () => voiceAction("align"));
+document.querySelector("#voice-apply").addEventListener("click", () => {
+  const timeline = [...document.querySelectorAll(".timing-row")].map(row => ({
+    shotId: row.dataset.shotId, text: row.querySelector("span").textContent,
+    start: Math.round(Number(row.querySelector('[data-time-key="start"]').value) * 1000),
+    end: Math.round(Number(row.querySelector('[data-time-key="end"]').value) * 1000)
+  }));
+  if (confirm("将覆盖有台词镜头的时长，无台词镜头保持不变。继续？")) voiceAction("apply-durations", { timeline });
 });
 document.querySelector("#environment-check").addEventListener("click", async () => {
   const dialog = document.querySelector("#environment-dialog");

@@ -1004,6 +1004,11 @@ body {
 .voice-actions input { width: 100%; min-width: 0; }
 #voice-error { margin: 0; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
 #voice-takes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.timing-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px 120px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.timing-row span { overflow-wrap: anywhere; }
+.timing-row label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.timing-row input { width: 100%; min-width: 0; }
+@media (max-width: 600px) { .timing-row { grid-template-columns: 1fr 1fr; } .timing-row span { grid-column: 1 / -1; } }
 /* --- Script Panel --- */
 .script-panel {
   display: grid;

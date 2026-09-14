@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 import { expireTasks } from "./task-state.mjs";
 import { inspectEnvironment } from "./runtime.mjs";
-import { generateVoice } from "./audio.mjs";
+import { generateVoice, alignVoice } from "./audio.mjs";
+import { spokenText, dialogueKey, applyTiming } from "./timing.mjs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import {
@@ -181,6 +182,8 @@ function normalizeShot(shot = {}) {
     mediaType: shot.mediaType === "video" ? "video" : "image",
     duration: Number.isFinite(Number(shot.duration)) ? Number(shot.duration) : 5,
     dialogue: String(shot.dialogue || ""),
+    timeStart: Number.isFinite(shot.timeStart) ? shot.timeStart : null,
+    timeEnd: Number.isFinite(shot.timeEnd) ? shot.timeEnd : null,
     visualPrompt: String(shot.visualPrompt || ""),
     generator: ["manual", "image-gen", "hyperframes", "remotion"].includes(shot.generator)
       ? shot.generator
@@ -1294,12 +1297,45 @@ async function handleGenerationApi(request, response, url) {
 }
 
 async function handleApi(request, response, url) {
-  const audioMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/audio\/(generate|select)$/);
+  const audioMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/audio\/(generate|select|align|apply-durations)$/);
   if (audioMatch && request.method === "POST") {
     const [, projectId, action] = audioMatch;
     const project = await readProject(projectId);
     const body = await readBody(request);
     if (audioJobs.has(projectId)) return sendError(response, 409, "配音任务正在处理");
+    if (["align", "apply-durations"].includes(action)) {
+      const take = project.audio.takes.find(t => t.id === project.audio.selectedId);
+      if (!take) return sendError(response, 400, "请先生成或选择配音");
+      if (action === "apply-durations") {
+        try { project.shots = applyTiming(project.shots, take, body.timeline || take.timeline); }
+        catch (error) { return sendError(response, 409, error.message); }
+        if (body.timeline) take.timeline = body.timeline;
+        take.appliedAt = new Date().toISOString();
+        return sendJson(response, 200, await saveProject(project));
+      }
+      if (spokenText(project.shots) !== take.text) return sendError(response, 409, "当前镜头台词与此配音文本不同，请重新生成配音后对齐");
+      audioJobs.add(projectId);
+      project.audio.status = "aligning";
+      project.audio.error = "";
+      const saved = await saveProject(project);
+      void alignVoice(join(projectMediaDir(projectId), basename(take.fileName)), project.shots, take.durationMs).then(timeline => serializeApi(async () => {
+        const current = await readProject(projectId);
+        const version = current.audio.takes.find(t => t.id === take.id);
+        if (!version) throw new Error("配音版本已移除");
+        version.timeline = timeline;
+        version.dialogueKey = dialogueKey(project.shots);
+        version.alignEngine = "silence-estimate";
+        current.audio.status = "ready";
+        await saveProject(current);
+      })).catch(error => serializeApi(async () => {
+        try {
+          const current = await readProject(projectId);
+          current.audio.status = "failed"; current.audio.error = error.message;
+          await saveProject(current);
+        } catch (saveError) { console.error(saveError); }
+      })).finally(() => audioJobs.delete(projectId));
+      return sendJson(response, 202, saved);
+    }
     if (action === "select") {
       if (!project.audio.takes.some(take => take.id === body.takeId)) return sendError(response, 404, "配音版本不存在");
       project.audio.selectedId = body.takeId;
