@@ -1,3 +1,4 @@
+import { createAutosave } from "./autosave.js";
 const projectsView = document.querySelector("#projects-view");
 const storyboardView = document.querySelector("#storyboard-view");
 const scriptPanel = document.querySelector("#script-panel");
@@ -164,8 +165,6 @@ Rules:
 
 let project = null;
 let projects = [];
-let saveTimer;
-let savePromise = Promise.resolve();
 let pollTimer;
 let activeSelect;
 let dialogMode = "create";
@@ -737,7 +736,8 @@ function currentProjectId() {
   return decodeURIComponent(location.pathname.match(/^\/project\/([^/]+)\/?$/)?.[1] || "");
 }
 
-function navigate(path) {
+async function navigate(path) {
+  try { await flushSave(); } catch (error) { showToast(error.message, "error"); return; }
   history.pushState({}, "", path);
   route();
 }
@@ -1601,36 +1601,28 @@ function updateSummary() {
 }
 
 function queueSave() {
-  saveStatus.textContent = "保存中…";
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    savePromise = saveProject();
-  }, 450);
+  autosave.schedule();
 }
 
 async function flushSave() {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-    savePromise = saveProject();
-  }
-  await savePromise;
+  if (!await autosave.flush()) throw new Error("尚有未保存的修改，请重试保存后继续");
 }
 
-async function saveProject() {
-  try {
-    const saved = await api(`/api/projects/${encodeURIComponent(project.id)}`, {
+const autosave = createAutosave({
+  read: () => project,
+  write: (snapshot) => api(`/api/projects/${encodeURIComponent(snapshot.id)}`, {
       method: "PUT",
-      body: JSON.stringify(project)
-    });
-    project.updatedAt = saved.updatedAt;
-    saveStatus.textContent = "已保存";
-  } catch (error) {
-    saveStatus.textContent = "保存失败";
-    showToast(error.message, "error");
-  }
-}
+      body: JSON.stringify(snapshot)
+    }),
+  onSaved: (saved) => { if (project?.id === saved.id) project.updatedAt = saved.updatedAt; },
+  onState: (state) => { saveStatus.textContent = ({ dirty: "待保存", saving: "保存中…", saved: "已保存", error: "保存失败，点击重试" })[state]; },
+  onError: (error) => showToast(error.message, "error")
+});
+saveStatus.addEventListener("click", () => autosave.flush());
+window.addEventListener("beforeunload", (event) => {
+  if (autosave.dirty) { event.preventDefault(); event.returnValue = ""; }
+});
+window.addEventListener("online", () => autosave.flush());
 
 function renderStoryboard() {
   closeSelect();
@@ -1985,6 +1977,7 @@ async function queueGeneration(shotIds, force = false) {
 }
 
 async function addShot() {
+  await flushSave();
   project = await api(`/api/projects/${encodeURIComponent(project.id)}/shots`, {
     method: "POST",
     body: JSON.stringify(emptyShot())
@@ -1996,14 +1989,18 @@ async function addShot() {
 function startPolling() {
   clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
-    if (!project || saveStatus.textContent === "保存中…") return;
+    if (!project || autosave.dirty) return;
+    const polledId = project.id;
+    const polledVersion = project.updatedAt;
     try {
       const remote = await api(`/api/projects/${encodeURIComponent(project.id)}`);
+      if (project?.id !== polledId || autosave.dirty || project.updatedAt !== polledVersion) return;
       if (remote.updatedAt !== project.updatedAt) {
         project = remote;
         renderStoryboard();
       }
-    } catch {
+    } catch (error) {
+      if (error.status !== 404 || project?.id !== polledId || autosave.dirty) return;
       clearInterval(pollTimer);
       history.replaceState({}, "", "/");
       await showProjectsView();

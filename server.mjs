@@ -6,6 +6,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   writeFile
@@ -28,6 +29,17 @@ const legacyDataFile = join(dataDir, "storyboard.json");
 const legacyMediaDir = join(dataDir, "media");
 const port = Number(args.port || process.env.PORT || process.env.CODEX_STORYBOARD_PORT || 43218);
 let generationMutationQueue = Promise.resolve();
+let apiQueue = Promise.resolve();
+function serializeApi(operation) {
+  const result = apiQueue.then(operation, operation);
+  apiQueue = result.catch(() => {});
+  return result;
+}
+async function atomicJson(path, value) {
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(temporary, path);
+}
 
 const aspectRatios = {
   "9:16": { width: 1080, height: 1920 },
@@ -246,7 +258,7 @@ async function readProjectsIndex() {
 }
 
 async function saveProjectsIndex(index) {
-  await writeFile(projectsFile, `${JSON.stringify(index, null, 2)}\n`, "utf8");
+  await atomicJson(projectsFile, index);
   return index;
 }
 
@@ -263,10 +275,10 @@ async function readProject(projectId) {
 }
 
 async function saveProject(project) {
-  const next = normalizeProject({ ...project, updatedAt: new Date().toISOString() });
+  const next = normalizeProject({ ...project, updatedAt: new Date(Math.max(Date.now(), Date.parse(project.updatedAt || 0) + 1 || 0)).toISOString() });
   await mkdir(projectMediaDir(next.id), { recursive: true });
   next.hasDesign = await exists(projectDesignFile(next.id));
-  await writeFile(projectFile(next.id), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  await atomicJson(projectFile(next.id), next);
 
   const index = await readProjectsIndex();
   const record = {
@@ -948,10 +960,14 @@ async function handleProjectsApi(request, response, url) {
   if (request.method === "PUT") {
     const current = await readProject(projectId);
     const body = await readBody(request);
+    if (body.updatedAt && body.updatedAt !== current.updatedAt) {
+      return sendError(response, 409, "项目已在其他窗口或生成任务中更新，请保留当前文本并刷新后重试");
+    }
     return sendJson(response, 200, await saveProject({
       ...current,
       title: body.title,
       aspectRatio: body.aspectRatio,
+      scriptDraft: body.scriptDraft ?? current.scriptDraft,
       covers: body.covers || current.covers,
       shots: body.shots
     }));
@@ -1278,7 +1294,7 @@ async function handleApi(request, response, url) {
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
-    if (url.pathname.startsWith("/api/")) return await handleApi(request, response, url);
+    if (url.pathname.startsWith("/api/")) return await serializeApi(() => handleApi(request, response, url));
 
     const mediaMatch = url.pathname.match(/^\/media\/([^/]+)\/([^/]+)$/);
     if (mediaMatch) {
