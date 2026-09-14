@@ -989,6 +989,11 @@ body {
   border-radius: var(--radius);
 }
 
+.save-status-button { border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+#back-home { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); font-size: 26px; line-height: 1; }
+#back-home:hover { border-color: currentColor; }
+#environment-dialog { max-width: min(640px, calc(100vw - 32px)); }
+#environment-results p { padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 /* --- Script Panel --- */
 .script-panel {
   display: grid;
@@ -1007,9 +1012,8 @@ body {
   background: var(--paper);
 }
 .script-copy {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
+  display: grid;
+  place-items: center;
   gap: 18px;
   padding: 2px 4px 0;
 }
@@ -1017,7 +1021,7 @@ body {
   margin: 4px 0 0;
   font-size: 26px;
   line-height: 1.15;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 .script-copy p {
   margin: 6px 0 0;

@@ -2014,6 +2014,20 @@ function startPolling() {
 }
 
 renderRatioOptions();
+document.querySelector("#environment-check").addEventListener("click", async () => {
+  const dialog = document.querySelector("#environment-dialog");
+  const results = document.querySelector("#environment-results");
+  results.textContent = "检查中…";
+  dialog.showModal();
+  try {
+    const result = await api("/api/environment");
+    results.replaceChildren(...result.checks.map(check => {
+      const row = document.createElement("p");
+      row.textContent = `${check.name}：${({ ready: "已检测到", missing: "未就绪", session: "需会话确认" })[check.status]} · ${check.detail}`;
+      return row;
+    }));
+  } catch (error) { results.textContent = error.message; }
+});
 renderCoverPresetOptions();
 updateThemeButtons();
 

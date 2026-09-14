@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { expireTasks } from "./task-state.mjs";
+import { inspectEnvironment } from "./runtime.mjs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import {
@@ -1283,6 +1284,9 @@ async function handleGenerationApi(request, response, url) {
 }
 
 async function handleApi(request, response, url) {
+  if (request.method === "GET" && url.pathname === "/api/environment") {
+    return sendJson(response, 200, await inspectEnvironment());
+  }
   if (request.method === "GET" && url.pathname === "/api/health") {
     return sendJson(response, 200, {
       ok: true,

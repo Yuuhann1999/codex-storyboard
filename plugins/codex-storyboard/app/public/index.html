@@ -39,7 +39,7 @@
 
     <div id="storyboard-actions" class="storyboard-header" hidden>
       <div class="project-heading">
-        <button id="back-home" class="back-button" type="button" aria-label="返回项目首页">←</button>
+        <button id="back-home" class="back-button" type="button" aria-label="返回项目首页" title="返回项目首页">‹</button>
         <span class="header-divider"></span>
         <strong id="project-title"></strong>
         <span id="project-ratio" class="ratio-badge"></span>
@@ -50,7 +50,8 @@
         <button class="project-tab" type="button" data-project-tab="assets">素材</button>
       </nav>
       <div class="summary">
-        <span id="save-status" aria-live="polite">已保存</span>
+        <button id="save-status" class="save-status-button" type="button" aria-live="polite" title="重试保存">已保存</button>
+        <button id="environment-check" class="secondary" type="button">环境检查</button>
         <span class="summary-label">总时长</span>
         <strong id="duration-total">0:00</strong>
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="切换到深色主题">
@@ -220,9 +221,7 @@
     <section id="script-panel" class="project-panel script-panel" hidden>
       <div class="script-card">
         <div class="script-copy">
-          <p class="eyebrow">Script</p>
           <h1>脚本草稿</h1>
-          <p>把完整口播、文章或剪辑思路放在这里。</p>
         </div>
         <div class="script-editor">
           <textarea
@@ -524,6 +523,11 @@
   <input id="project-design-upload" type="file" accept=".md,text/markdown,text/plain" hidden />
   <input id="design-upload" type="file" accept=".md,text/markdown,text/plain" hidden />
   <div id="select-portal"></div>
+  <dialog id="environment-dialog">
+    <h2>环境检查</h2>
+    <div id="environment-results" aria-live="polite"></div>
+    <form method="dialog"><button class="secondary">关闭</button></form>
+  </dialog>
   <div id="toast" class="toast" hidden></div>
 
   <script type="module" src="/app.js"></script>
