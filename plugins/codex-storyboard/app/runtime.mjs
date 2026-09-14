@@ -1,10 +1,33 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL(".", import.meta.url));
 export const runtimeHome = process.env.CODEX_STORYBOARD_RUNTIME || join(root, ".runtime-voice");
-const localBinary = (name, fallback) => existsSync(join(runtimeHome, name)) ? join(runtimeHome, name) : fallback;
+const localBinary = (name) => {
+  const candidate = join(runtimeHome, name);
+  return existsSync(candidate) ? candidate : null;
+};
+export function findWindowsBinary(name, localAppData = process.env.LOCALAPPDATA, platform = process.platform) {
+  if (platform !== "win32" || !localAppData) return null;
+  const packagesRoot = join(localAppData, "Microsoft", "WinGet", "Packages");
+  try {
+    const packageDirs = readdirSync(packagesRoot, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && entry.name.toLowerCase().includes("ffmpeg"))
+      .sort((a, b) => b.name.localeCompare(a.name));
+    for (const packageDir of packageDirs) {
+      const packageRoot = join(packagesRoot, packageDir.name);
+      const versionDirs = readdirSync(packageRoot, { withFileTypes: true })
+        .filter(entry => entry.isDirectory())
+        .sort((a, b) => b.name.localeCompare(a.name));
+      for (const versionDir of versionDirs) {
+        const candidate = join(packageRoot, versionDir.name, "bin", name);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+  } catch {}
+  return null;
+}
 export function run(command, args, timeout = 15000) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { windowsHide: true, shell: false, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
@@ -18,9 +41,9 @@ export function run(command, args, timeout = 15000) {
 }
 const venvPython = join(root, ".venv-voice", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
 export const python = process.env.CODEX_STORYBOARD_PYTHON || (existsSync(venvPython) ? venvPython : "python");
-export const ffmpeg = process.env.CODEX_STORYBOARD_FFMPEG || localBinary("ffmpeg/bin/ffmpeg.exe", "ffmpeg");
-export const ffprobe = process.env.CODEX_STORYBOARD_FFPROBE || localBinary("ffmpeg/bin/ffprobe.exe", "ffprobe");
-export const whisper = process.env.CODEX_STORYBOARD_WHISPER || localBinary("whisper/whisper-cli.exe", "whisper-cli");
+export const ffmpeg = process.env.CODEX_STORYBOARD_FFMPEG || localBinary("ffmpeg/bin/ffmpeg.exe") || findWindowsBinary("ffmpeg.exe") || "ffmpeg";
+export const ffprobe = process.env.CODEX_STORYBOARD_FFPROBE || localBinary("ffmpeg/bin/ffprobe.exe") || findWindowsBinary("ffprobe.exe") || "ffprobe";
+export const whisper = process.env.CODEX_STORYBOARD_WHISPER || localBinary("whisper/whisper-cli.exe") || "whisper-cli";
 export const whisperModel = process.env.CODEX_STORYBOARD_WHISPER_MODEL || join(runtimeHome, "ggml-large-v3-turbo-q5_0.bin");
 export async function inspectEnvironment() {
   const checks = [{ name: "Node.js", status: "ready", detail: process.version }];

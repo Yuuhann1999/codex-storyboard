@@ -5,6 +5,21 @@ import { fileURLToPath } from "node:url";
 import { run, python, ffmpeg, ffprobe, whisper, whisperModel } from "./runtime.mjs";
 import { matchRecognition } from "./recognition.mjs";
 
+async function verifyVoiceRuntime() {
+  try {
+    await run(python, ["-c", "import gradio_client"], 10000);
+  } catch (error) {
+    throw new Error(`VoxCPM 配音依赖未就绪：当前 Python 无法导入 gradio_client（${python}）。请执行“${python} -m pip install gradio_client==2.7.0”。原始错误：${error.message}`);
+  }
+  for (const [command, label] of [[ffmpeg, "FFmpeg"], [ffprobe, "FFprobe"]]) {
+    try {
+      await run(command, ["-version"]);
+    } catch (error) {
+      throw new Error(`${label} 不可用（${command}）。请安装 FFmpeg，或设置 CODEX_STORYBOARD_${label === "FFmpeg" ? "FFMPEG" : "FFPROBE"} 指向可执行文件。原始错误：${error.message}`);
+    }
+  }
+}
+
 export async function alignVoice(path, shots, totalMs) {
   if (!(await stat(whisperModel).catch(() => null))) throw new Error("Whisper 本地模型未安装，请先完成语音环境安装");
   const directory = await mkdtemp(join(tmpdir(), "codex-whisper-"));
@@ -33,9 +48,7 @@ export async function generateVoice({ directory, id, text, instruction }) {
   const input = join(directory, `${id}.json`);
   const raw = join(directory, `${id}-raw.wav`);
   const output = join(directory, `${id}.wav`);
-  await run(python, ["-c", "import gradio_client"], 10000);
-  await run(ffmpeg, ["-version"]);
-  await run(ffprobe, ["-version"]);
+  await verifyVoiceRuntime();
   await writeFile(input, JSON.stringify({ text, instruction, output: raw }), "utf8");
   try {
     await run(python, [fileURLToPath(new URL("./voice/voxcpm.py", import.meta.url)), input], 10 * 60 * 1000);
