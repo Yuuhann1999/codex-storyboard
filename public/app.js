@@ -1625,6 +1625,7 @@ window.addEventListener("beforeunload", (event) => {
 window.addEventListener("online", () => autosave.flush());
 
 function renderStoryboard() {
+  renderVoice();
   closeSelect();
   ensureCovers();
   project.scriptDraft = String(project.scriptDraft || "");
@@ -2014,6 +2015,38 @@ function startPolling() {
 }
 
 renderRatioOptions();
+function renderVoice() {
+  const audio = project?.audio || { takes: [] };
+  const take = audio.takes.find(item => item.id === audio.selectedId);
+  const player = document.querySelector("#voice-player");
+  player.hidden = !take;
+  if (take && player.getAttribute("src") !== take.url) player.src = take.url;
+  if (!take) player.removeAttribute("src");
+  const busy = ["generating", "aligning"].includes(audio.status);
+  document.querySelector("#voice-status").textContent = ({ generating: "生成中", aligning: "对齐中", ready: "已就绪", failed: "处理失败" })[audio.status] || "";
+  document.querySelector("#voice-error").textContent = audio.error || "";
+  document.querySelector("#voice-generate").disabled = busy;
+  document.querySelector("#voice-takes").replaceChildren(...audio.takes.map((item, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = `版本 ${index + 1} · ${(item.durationMs / 1000).toFixed(1)} 秒${item.id === audio.selectedId ? " · 当前" : ""}`;
+    button.disabled = busy || item.id === audio.selectedId;
+    button.addEventListener("click", () => voiceAction("select", { takeId: item.id }));
+    return button;
+  }));
+}
+async function voiceAction(action, payload = {}) {
+  try {
+    await flushSave();
+    project = await api(`/api/projects/${encodeURIComponent(project.id)}/audio/${action}`, { method: "POST", body: JSON.stringify(payload) });
+    renderStoryboard();
+  } catch (error) { showToast(error.message, "error"); }
+}
+document.querySelector("#voice-generate").addEventListener("click", () => {
+  if (!confirm("将镜头台词（无台词时使用脚本）发送到 VoxCPM 在线服务生成配音，继续？")) return;
+  voiceAction("generate", { instruction: document.querySelector("#voice-instruction").value });
+});
 document.querySelector("#environment-check").addEventListener("click", async () => {
   const dialog = document.querySelector("#environment-dialog");
   const results = document.querySelector("#environment-results");

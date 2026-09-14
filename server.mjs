@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { expireTasks } from "./task-state.mjs";
 import { inspectEnvironment } from "./runtime.mjs";
+import { generateVoice } from "./audio.mjs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import {
@@ -32,6 +33,7 @@ const legacyMediaDir = join(dataDir, "media");
 const port = Number(args.port || process.env.PORT || process.env.CODEX_STORYBOARD_PORT || 43218);
 let generationMutationQueue = Promise.resolve();
 let apiQueue = Promise.resolve();
+const audioJobs = new Set();
 function serializeApi(operation) {
   const result = apiQueue.then(operation, operation);
   apiQueue = result.catch(() => {});
@@ -52,6 +54,8 @@ const aspectRatios = {
 };
 
 const contentTypes = {
+  ".wav": "audio/wav",
+  ".mp3": "audio/mpeg",
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -233,6 +237,7 @@ function normalizeProject(project = {}) {
     title: String(project.title || "未命名项目").trim() || "未命名项目",
     aspectRatio: normalizeAspectRatio(project.aspectRatio),
     scriptDraft: String(project.scriptDraft || ""),
+    audio: project.audio && typeof project.audio === "object" ? project.audio : { takes: [], selectedId: "", status: "idle" },
     hasDesign: Boolean(project.hasDesign),
     covers: normalizeCovers(project.covers),
     shots: Array.isArray(project.shots) ? project.shots.map(normalizeShot) : [],
@@ -271,6 +276,11 @@ async function readProject(projectId) {
   try {
     const project = normalizeProject(JSON.parse(await readFile(projectFile(projectId), "utf8")));
     project.hasDesign = await exists(projectDesignFile(projectId));
+    if (["generating", "aligning"].includes(project.audio.status) && !audioJobs.has(projectId)) {
+      project.audio.status = "failed";
+      project.audio.error = "上次配音任务已中断，请重试";
+      return saveProject(project);
+    }
     if (expireTasks(project)) return saveProject(project);
     return project;
   } catch (error) {
@@ -1284,6 +1294,42 @@ async function handleGenerationApi(request, response, url) {
 }
 
 async function handleApi(request, response, url) {
+  const audioMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/audio\/(generate|select)$/);
+  if (audioMatch && request.method === "POST") {
+    const [, projectId, action] = audioMatch;
+    const project = await readProject(projectId);
+    const body = await readBody(request);
+    if (audioJobs.has(projectId)) return sendError(response, 409, "配音任务正在处理");
+    if (action === "select") {
+      if (!project.audio.takes.some(take => take.id === body.takeId)) return sendError(response, 404, "配音版本不存在");
+      project.audio.selectedId = body.takeId;
+      return sendJson(response, 200, await saveProject(project));
+    }
+    const text = project.shots.map(shot => shot.dialogue.trim()).filter(Boolean).join("\n") || project.scriptDraft.trim();
+    if (!text || text.length > 10000) return sendError(response, 400, "请填写台词或脚本，最多 10000 字");
+    const id = createId("voice");
+    const instruction = String(body.instruction || "").slice(0, 1000);
+    project.audio.status = "generating";
+    project.audio.error = "";
+    project.audio.startedAt = new Date().toISOString();
+    audioJobs.add(projectId);
+    const saved = await saveProject(project);
+    void generateVoice({ directory: projectMediaDir(projectId), id, text, instruction }).then(result => serializeApi(async () => {
+      const current = await readProject(projectId);
+      current.audio.takes.push({ id, ...result, url: mediaUrl(projectId, result.fileName), text, instruction, createdAt: new Date().toISOString() });
+      current.audio.selectedId = id;
+      current.audio.status = "ready";
+      await saveProject(current);
+    })).catch(error => serializeApi(async () => {
+      try {
+        const current = await readProject(projectId);
+        current.audio.status = "failed";
+        current.audio.error = String(error.message).slice(-1500);
+        await saveProject(current);
+      } catch (saveError) { console.error(saveError); }
+    })).finally(() => audioJobs.delete(projectId));
+    return sendJson(response, 202, saved);
+  }
   if (request.method === "GET" && url.pathname === "/api/environment") {
     return sendJson(response, 200, await inspectEnvironment());
   }

@@ -237,6 +237,18 @@
     </section>
 
     <section id="storyboard-panel" class="project-panel storyboard-panel">
+      <details id="voice-panel" class="voice-panel">
+        <summary>口播配音 <span id="voice-status"></span></summary>
+        <div class="voice-content">
+          <audio id="voice-player" controls hidden></audio>
+          <p id="voice-error" role="status"></p>
+          <div class="voice-actions">
+            <label>音色描述<input id="voice-instruction" placeholder="自然、清晰的普通话" maxlength="1000" /></label>
+            <button id="voice-generate" class="secondary" type="button">生成 VoxCPM 配音</button>
+          </div>
+          <details><summary>配音版本</summary><div id="voice-takes"></div></details>
+        </div>
+      </details>
       <div class="table-shell">
       <table>
         <colgroup>
