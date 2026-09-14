@@ -5,6 +5,13 @@ description: Process pending Codex Storyboard image and video generation tasks. 
 
 # Process Codex Storyboard Tasks
 
+## Task recovery
+
+While processing a long render, call `heartbeat_storyboard_generation_task`
+at least every 10 minutes. Tasks expire after 30 minutes without a heartbeat.
+If the user released a task or its ID changed, stop attempting to complete it;
+never attach a late output to a replacement task automatically.
+
 Process the local storyboard queue. The MCP tools start the bundled local app automatically when needed and default to `http://127.0.0.1:43218`.
 
 If the current Codex session does not expose Storyboard MCP tools such as `list_storyboard_generation_tasks`, `claim_storyboard_generation_task`, or `complete_storyboard_generation_task`, first use `tool_search` to search for `codex storyboard` and load the deferred tools. Only if `tool_search` is unavailable or cannot find them, tell the user to start a new Codex conversation or restart Codex so plugin tools are reloaded.

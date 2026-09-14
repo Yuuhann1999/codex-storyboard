@@ -343,7 +343,7 @@ function coverGenerationLabel(cover) {
 
 function coverGenerateLabel(cover) {
   if (cover.generationStatus === "pending") return "取消队列";
-  if (cover.generationStatus === "processing") return "生成中";
+  if (cover.generationStatus === "processing") return "释放任务";
   if (!canGenerateCover(cover)) return "填写封面提示词";
   return cover.generationStatus === "ready" || cover.generationStatus === "failed"
     ? "重新生成封面"
@@ -1180,8 +1180,7 @@ function renderCoverPanel() {
   coverStatus.title = cover.generationError || "";
   document.querySelector("#generate-cover").textContent = coverGenerateLabel(cover);
   document.querySelector("#generate-cover").disabled =
-    cover.generationStatus === "processing" ||
-    (cover.generationStatus !== "pending" && !canGenerateCover(cover));
+    (!["pending", "processing"].includes(cover.generationStatus) && !canGenerateCover(cover));
   document.querySelector("#delete-cover").disabled =
     cover.generationStatus === "processing" || !cover.mediaUrl;
   document.querySelector("#delete-cover-reference").disabled =
@@ -1312,6 +1311,10 @@ async function queueCoverGeneration(force = false) {
   ensureCovers();
   const cover = project.covers[activeCoverType];
   if (cover.generationStatus === "pending") return cancelCoverGeneration(cover);
+  if (cover.generationStatus === "processing") {
+    if (confirm("释放此封面任务？旧结果将不再回填。")) return cancelCoverGeneration(cover);
+    return;
+  }
   if (!coverUsesCustomPrompt(cover)) {
     cover.prompt = coverPresetByValue(cover.preset).buildPrompt(coverPromptContext());
   }
@@ -1332,8 +1335,9 @@ async function queueCoverGeneration(force = false) {
 }
 
 async function cancelCoverGeneration(cover) {
-  saveStatus.textContent = "取消封面生成任务…";
   try {
+    await flushSave();
+    saveStatus.textContent = "取消封面生成任务…";
     const result = await api(
       `/api/generation/tasks/${encodeURIComponent(cover.generationTaskId)}/cancel`,
       { method: "POST", body: JSON.stringify({}) }
@@ -2243,8 +2247,7 @@ coverPrompt.addEventListener("input", () => {
   document.querySelector("#generate-cover").textContent =
     coverGenerateLabel(cover);
   document.querySelector("#generate-cover").disabled =
-    cover.generationStatus === "processing" ||
-    (cover.generationStatus !== "pending" && !canGenerateCover(cover));
+    (!["pending", "processing"].includes(cover.generationStatus) && !canGenerateCover(cover));
   queueSave();
 });
 document.querySelector("#upload-cover").addEventListener("click", () => {
@@ -2299,7 +2302,13 @@ document.addEventListener("pointerdown", (event) => {
 });
 window.addEventListener("resize", () => closeSelect());
 document.querySelector(".table-shell").addEventListener("scroll", () => closeSelect(), { passive: true });
-window.addEventListener("popstate", route);
+window.addEventListener("popstate", async () => {
+  try { await flushSave(); await route(); }
+  catch (error) {
+    if (project) history.pushState({}, "", `/project/${encodeURIComponent(project.id)}`);
+    showToast(error.message, "error");
+  }
+});
 
 // ── 风格库事件 ──
 document.querySelectorAll("[data-home-tab]").forEach((button) => {

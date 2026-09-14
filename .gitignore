@@ -1,5 +1,6 @@
 .DS_Store
 node_modules/
+.venv-voice/
 .superpowers/
 generation/
 data/projects.json

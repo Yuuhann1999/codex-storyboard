@@ -210,6 +210,23 @@ async function uploadDesign(projectId, designPath, args) {
 function tools() {
   return [
     {
+      name: "inspect_storyboard_environment",
+      description: "Check local voice dependencies. ImageGen/Remotion/HyperFrames still require verification in the current agent session.",
+      inputSchema: { type: "object", properties: { storyboardUrl: { type: "string" } }, additionalProperties: false },
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    {
+      name: "heartbeat_storyboard_generation_task",
+      description: "Renew an active generation task before its 30 minute inactivity timeout. Call periodically while working on a long render.",
+      inputSchema: { type: "object", properties: { taskId: { type: "string" }, storyboardUrl: { type: "string" } }, required: ["taskId"], additionalProperties: false }
+    },
+    {
+      name: "manage_storyboard_audio",
+      description: "Generate VoxCPM voice, select a take, estimate dialogue alignment, or apply durations. Generate transmits dialogue to the online VoxCPM service: obtain user consent first. Alignment is approximate; review before applying. Poll get_storyboard_project for async status.",
+      inputSchema: { type: "object", properties: { projectId: { type: "string" }, action: { type: "string", enum: ["generate", "select", "align", "apply-durations"] }, instruction: { type: "string" }, takeId: { type: "string" }, storyboardUrl: { type: "string" } }, required: ["projectId", "action"], additionalProperties: false },
+      annotations: { readOnlyHint: false, openWorldHint: true }
+    },
+    {
       name: "open_storyboard",
       title: "Open Codex Storyboard",
       description: "Start or open the bundled local Codex Storyboard app and return its local URL.",
@@ -439,6 +456,22 @@ function tools() {
 }
 
 async function callTool(id, params) {
+  if (["inspect_storyboard_environment", "heartbeat_storyboard_generation_task", "manage_storyboard_audio"].includes(params?.name)) {
+    const input = params.arguments || {};
+    let path = "/api/environment", options = {};
+    if (params.name === "heartbeat_storyboard_generation_task") {
+      path = `/api/generation/tasks/${encodeURIComponent(input.taskId)}/heartbeat`;
+      options = jsonOptions({});
+    }
+    if (params.name === "manage_storyboard_audio") {
+      if (!["generate", "select", "align", "apply-durations"].includes(input.action)) throw new Error("Invalid audio action");
+      path = `/api/projects/${encodeURIComponent(input.projectId)}/audio/${input.action}`;
+      options = jsonOptions({ instruction: input.instruction, takeId: input.takeId });
+    }
+    const result = await requestJson(path, options, input);
+    sendResult(id, { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result });
+    return;
+  }
   const args = params?.arguments ?? {};
 
   if (params?.name === "open_storyboard") {
@@ -560,6 +593,7 @@ async function callTool(id, params) {
       jsonOptions({
         title: project.title,
         aspectRatio: project.aspectRatio,
+        updatedAt: project.updatedAt,
         shots: project.shots
       }, "PUT"),
       args

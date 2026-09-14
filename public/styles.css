@@ -82,7 +82,7 @@
 * { box-sizing: border-box; }
 
 html, body {
-  min-width: 980px;
+  min-width: 320px;
   min-height: 100%;
   margin: 0;
   background: var(--ground);
@@ -191,9 +191,7 @@ body {
 
 /* --- Project Tabs --- */
 .project-tabs {
-  position: absolute;
-  top: 50%;
-  left: 50%;
+  position: static;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -202,7 +200,8 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
   background: var(--surface-subtle);
-  transform: translate(-50%, -50%);
+  transform: none;
+  flex-shrink: 0;
 }
 .project-tab {
   min-height: 30px;
@@ -978,7 +977,11 @@ body {
 }
 .storyboard-panel {
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
+.storyboard-panel > .table-shell { height: auto; flex: 1 0 300px; }
+.voice-content { max-height: 50vh; overflow: auto; }
 .compact-button { min-height: 30px; padding: 6px 14px; font-size: 12px; }
 
 .table-shell {
@@ -2238,6 +2241,23 @@ textarea:focus-visible {
 
 /* --- Responsive --- */
 @media (max-width: 1180px) {
-  .summary-label, #save-status { display: none; }
+  body { padding-top: 0; }
+  .topbar { position: sticky; padding: 10px 16px; gap: 8px; flex-wrap: wrap; }
+  .storyboard-header { flex: 1 1 100%; margin-left: 0; flex-wrap: wrap; gap: 8px; }
+  .project-heading { flex: 1 1 auto; }
+  .summary { flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+  .summary > button { white-space: nowrap; flex-shrink: 0; }
+  .storyboard-view { height: auto; min-height: calc(100vh - 160px); padding: 12px; }
+  .script-panel { height: calc(100vh - 170px); min-height: 360px; }
+  .storyboard-panel > .table-shell { max-height: 75vh; }
+  .summary-label { display: none; }
   .project-heading > strong { max-width: 150px; }
+}
+.brand { flex-shrink: 0; }
+.summary > button { white-space: nowrap; }
+@media (max-width: 600px) {
+  .summary { flex-basis: 100%; justify-content: flex-start; gap: 8px; }
+  .summary > button { padding-left: 10px; padding-right: 10px; }
+  .script-copy h1 { font-size: 22px; }
+  .script-card { padding: 12px; }
 }
