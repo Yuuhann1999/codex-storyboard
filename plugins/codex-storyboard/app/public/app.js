@@ -2029,17 +2029,25 @@ function renderVoice() {
   const audio = project?.audio || { takes: [] };
   const take = audio.takes.find(item => item.id === audio.selectedId);
   const player = document.querySelector("#voice-player");
+  const currentMeta = document.querySelector("#voice-current-meta");
   player.hidden = !take;
   if (take && player.getAttribute("src") !== take.url) player.src = take.url;
   if (!take) player.removeAttribute("src");
   const busy = ["generating", "aligning"].includes(audio.status);
-  document.querySelector("#voice-status").textContent = ({ generating: "生成中", aligning: "对齐中", ready: "已就绪", failed: "处理失败" })[audio.status] || "";
+  const status = document.querySelector("#voice-status");
+  status.textContent = ({ generating: "生成中", aligning: "对齐中", ready: "已就绪", failed: "需要处理" })[audio.status] || "未生成";
+  status.dataset.status = audio.status || "idle";
+  currentMeta.textContent = take
+    ? `${(take.durationMs / 1000).toFixed(2)} 秒 · ${take.alignEngine?.startsWith("whisper") ? "已完成本地识别" : "尚未对齐"}`
+    : "尚未生成配音";
   document.querySelector("#voice-error").textContent = audio.error || "";
   document.querySelector("#voice-generate").disabled = busy;
   document.querySelector("#voice-align").disabled = busy || !take;
   document.querySelector("#voice-apply").disabled = busy || !take?.timeline?.length;
-  document.querySelector("#timing-note").hidden = !take?.timeline?.length;
-  document.querySelector("#timing-note").textContent = take?.alignEngine?.startsWith("whisper") ? "Whisper 本地识别对齐，建议试听校正。无台词镜头保留原时长。" : "旧版估算结果，建议重新识别对齐。";
+  document.querySelector("#timing-note").hidden = false;
+  document.querySelector("#timing-note").textContent = take?.alignEngine?.startsWith("whisper")
+    ? "Whisper 已完成本地识别，可试听后微调时间。无台词镜头保留原时长。"
+    : take ? "尚未完成识别对齐，请先点击“识别并对齐”。" : "生成配音后，可识别台词并调整镜头时长。";
   document.querySelector("#recognition-details").hidden = !take?.recognition?.length;
   document.querySelector("#recognition-text").textContent = (take?.recognition || []).map(s => `${(s.start / 1000).toFixed(2)}–${(s.end / 1000).toFixed(2)} 秒：${s.text}`).join("\n");
   document.querySelector("#voice-timeline").replaceChildren(...(take?.timeline || []).map(segment => {
@@ -2054,11 +2062,13 @@ function renderVoice() {
     }
     return row;
   }));
+  document.querySelector("#voice-version-count").textContent = audio.takes.length ? `${audio.takes.length} 个` : "暂无";
   document.querySelector("#voice-takes").replaceChildren(...audio.takes.map((item, index) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "secondary";
-    button.textContent = `版本 ${index + 1} · ${(item.durationMs / 1000).toFixed(1)} 秒${item.id === audio.selectedId ? " · 当前" : ""}`;
+    button.className = "voice-take-option";
+    button.setAttribute("aria-pressed", String(item.id === audio.selectedId));
+    button.textContent = `版本 ${index + 1} · ${(item.durationMs / 1000).toFixed(1)} 秒${item.id === audio.selectedId ? " · 当前版本" : ""}`;
     button.disabled = busy || item.id === audio.selectedId;
     button.addEventListener("click", () => voiceAction("select", { takeId: item.id }));
     return button;
@@ -2087,16 +2097,43 @@ document.querySelector("#voice-apply").addEventListener("click", () => {
 document.querySelector("#environment-check").addEventListener("click", async () => {
   const dialog = document.querySelector("#environment-dialog");
   const results = document.querySelector("#environment-results");
-  results.textContent = "检查中…";
+  const summaryTitle = document.querySelector("#environment-summary-title");
+  const summaryDetail = document.querySelector("#environment-summary-detail");
+  const summaryDot = document.querySelector("#environment-summary-dot");
+  summaryTitle.textContent = "检查中…";
+  summaryDetail.textContent = "正在读取本机依赖与会话能力";
+  summaryDot.dataset.status = "loading";
+  results.replaceChildren();
   dialog.showModal();
   try {
     const result = await api("/api/environment");
+    const missing = result.checks.filter(check => check.status === "missing").length;
+    const session = result.checks.filter(check => check.status === "session").length;
+    summaryTitle.textContent = missing ? "有工具尚未就绪" : session ? "部分能力需要确认" : "环境已就绪";
+    summaryDetail.textContent = missing ? `${missing} 项本机依赖未检测到` : session ? "插件能力由当前 Codex 会话决定" : "本机依赖检查通过";
+    summaryDot.dataset.status = missing ? "missing" : session ? "session" : "ready";
     results.replaceChildren(...result.checks.map(check => {
-      const row = document.createElement("p");
-      row.textContent = `${check.name}：${({ ready: "已检测到", missing: "未就绪", session: "需会话确认" })[check.status]} · ${check.detail}`;
+      const row = document.createElement("div");
+      row.className = "environment-row";
+      row.dataset.status = check.status;
+      const heading = document.createElement("div");
+      heading.className = "environment-row-heading";
+      const name = document.createElement("strong");
+      name.textContent = check.name;
+      const state = document.createElement("span");
+      state.className = "environment-state";
+      state.textContent = ({ ready: "已就绪", missing: "未安装", session: "需确认" })[check.status];
+      heading.append(name, state);
+      const detail = document.createElement("small");
+      detail.textContent = check.detail;
+      row.append(heading, detail);
       return row;
     }));
-  } catch (error) { results.textContent = error.message; }
+  } catch (error) {
+    summaryTitle.textContent = "检查失败";
+    summaryDetail.textContent = error.message;
+    summaryDot.dataset.status = "missing";
+  }
 });
 renderCoverPresetOptions();
 updateThemeButtons();

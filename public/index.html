@@ -51,7 +51,6 @@
       </nav>
       <div class="summary">
         <button id="save-status" class="save-status-button" type="button" aria-live="polite" title="重试保存">已保存</button>
-        <button id="environment-check" class="secondary" type="button">环境检查</button>
         <span class="summary-label">总时长</span>
         <strong id="duration-total">0:00</strong>
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="切换到深色主题">
@@ -149,6 +148,21 @@
         <span>风格库</span>
       </button>
     </nav>
+    <div class="home-sidebar-footer">
+      <button
+        id="environment-check"
+        class="home-nav-item home-settings-item"
+        type="button"
+        title="环境与设置"
+        aria-label="打开环境与设置"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
+          <path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3.1 1.1v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3.1-1.1l-.1.1a1.8 1.8 0 1 1-2.5-2.5l.1-.1A1.8 1.8 0 0 0 3.5 12a1.8 1.8 0 0 0-1.1-3.1h-.2a1.8 1.8 0 1 1 0-3.6h.2a1.8 1.8 0 0 0 1.1-3.1l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1A1.8 1.8 0 0 0 9.1.7h.2a1.8 1.8 0 1 1 3.6 0v.2a1.8 1.8 0 0 0 3.1 1.1l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1A1.8 1.8 0 0 0 19.5 8h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.1 3.4Z" transform="translate(1 1) scale(.92)" />
+        </svg>
+        <span>设置</span>
+      </button>
+    </div>
   </aside>
 
   <main id="projects-view" class="projects-view home-content">
@@ -235,22 +249,63 @@
         </div>
       </div>
       <details id="voice-panel" class="voice-panel">
-        <summary>口播配音 <span id="voice-status"></span></summary>
+        <summary class="voice-summary">
+          <span class="voice-summary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
+            </svg>
+          </span>
+          <span class="voice-summary-copy">
+            <strong>口播配音</strong>
+            <small>生成、试听并对齐脚本台词</small>
+          </span>
+          <span id="voice-status" class="voice-status-chip"></span>
+        </summary>
         <div class="voice-content">
-          <audio id="voice-player" controls hidden></audio>
-          <p id="voice-error" role="status"></p>
-          <div class="voice-actions">
-            <label>音色描述<input id="voice-instruction" placeholder="自然、清晰的普通话" maxlength="1000" /></label>
-            <button id="voice-generate" class="secondary" type="button">生成 VoxCPM 配音</button>
-          </div>
-          <details><summary>配音版本</summary><div id="voice-takes"></div></details>
-          <div class="voice-actions">
-            <button id="voice-align" class="secondary" type="button">对齐台词</button>
-            <button id="voice-apply" class="secondary" type="button">回填镜头时长</button>
-          </div>
-          <p id="timing-note" hidden>Whisper 本地识别对齐，建议试听校正。无台词镜头保留原时长。</p>
-          <details id="recognition-details" hidden><summary>识别原文</summary><div id="recognition-text"></div></details>
-          <div id="voice-timeline"></div>
+          <section class="voice-section voice-current-section">
+            <div class="voice-section-heading">
+              <div>
+                <h2>当前版本</h2>
+                <p id="voice-current-meta">尚未生成配音</p>
+              </div>
+              <audio id="voice-player" controls hidden></audio>
+            </div>
+            <p id="voice-error" class="voice-error" role="status"></p>
+          </section>
+          <section class="voice-section voice-compose-section">
+            <div class="voice-section-heading">
+              <div>
+                <h2>生成新版本</h2>
+                <p>使用镜头台词生成一条新的 VoxCPM 口播。</p>
+              </div>
+              <button id="voice-generate" class="primary" type="button">生成配音</button>
+            </div>
+            <label class="voice-field">
+              <span>声音描述 <small>可选</small></span>
+              <input id="voice-instruction" placeholder="自然、清晰的普通话" maxlength="1000" />
+            </label>
+          </section>
+          <section class="voice-section voice-timing-section">
+            <div class="voice-section-heading voice-timing-heading">
+              <div>
+                <h2>台词对齐</h2>
+                <p id="timing-note">生成配音后，可识别台词并调整镜头时长。</p>
+              </div>
+              <div class="voice-actions">
+                <button id="voice-align" class="secondary" type="button">识别并对齐</button>
+                <button id="voice-apply" class="secondary" type="button">应用镜头时长</button>
+              </div>
+            </div>
+            <details id="recognition-details" hidden class="voice-recognition-details">
+              <summary>查看识别原文</summary>
+              <div id="recognition-text"></div>
+            </details>
+            <div id="voice-timeline"></div>
+          </section>
+          <details class="voice-versions voice-section">
+            <summary>其他版本 <span id="voice-version-count"></span></summary>
+            <div id="voice-takes"></div>
+          </details>
         </div>
       </details>
     </section>
@@ -543,10 +598,27 @@
   <input id="project-design-upload" type="file" accept=".md,text/markdown,text/plain" hidden />
   <input id="design-upload" type="file" accept=".md,text/markdown,text/plain" hidden />
   <div id="select-portal"></div>
-  <dialog id="environment-dialog">
-    <h2>环境检查</h2>
-    <div id="environment-results" aria-live="polite"></div>
-    <form method="dialog"><button class="secondary">关闭</button></form>
+  <dialog id="environment-dialog" class="form-dialog environment-dialog">
+    <form method="dialog">
+      <div class="dialog-heading">
+        <div>
+          <h2>环境与设置</h2>
+          <p>查看本机工具和当前会话能力。</p>
+        </div>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <div class="environment-summary" aria-live="polite">
+        <span id="environment-summary-dot" class="environment-summary-dot"></span>
+        <div>
+          <strong id="environment-summary-title">准备检查</strong>
+          <span id="environment-summary-detail">检查本机依赖与会话能力</span>
+        </div>
+      </div>
+      <div id="environment-results" class="environment-list" aria-live="polite"></div>
+      <div class="dialog-actions">
+        <button class="secondary" type="submit">完成</button>
+      </div>
+    </form>
   </dialog>
   <div id="toast" class="toast" hidden></div>
 
