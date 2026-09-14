@@ -1019,7 +1019,12 @@ body {
 .script-panel {
   display: grid;
   place-items: stretch;
+  grid-template-rows: minmax(360px, 1fr) auto;
+  height: auto;
+  min-height: 100%;
 }
+.script-panel > .script-card { min-height: 440px; }
+.script-panel > .voice-panel { margin-top: 16px; }
 .script-card {
   width: 100%;
   height: 100%;
