@@ -17,6 +17,12 @@ const BROLL_REFERENCE_REPOSITORIES = [
   "https://github.com/heygen-com/hyperframes-launches",
   "https://github.com/Vincentwei1021/video-shotcraft"
 ];
+const BROLL_TEMPLATE_REUSE_POLICY = [
+  "B-roll 模板复用优先级（强制）：先从本地模板和两个指定开源仓库中寻找可直接复用的模板、组件、镜头骨架、GIF/MP4 或其他现成内容；",
+  "优先选择与语义最贴合的现成方案并只做必要的文案、配色、排版和时长适配；",
+  "如果现成方案不完全适配，必须从最接近的模板或骨架改造，不得直接从空白项目开始；",
+  "只有在明确记录两个仓库和本地模板均无法承载核心语义、并写出检索范围、失败原因与最小替代方案后，才允许从零搭建。"
+].join(" ");
 const pluginRoot = fileURLToPath(new URL("..", import.meta.url));
 const bundledServer = join(pluginRoot, "app", "server.mjs");
 const defaultDataDir = process.env.CODEX_STORYBOARD_DATA_DIR ||
@@ -205,6 +211,13 @@ function mergePlanList(next, previous) {
   return stringList(next).length > 0 ? stringList(next) : stringList(previous);
 }
 
+function withTemplateReusePolicy(value) {
+  const text = String(value || "").trim();
+  return text.includes("B-roll 模板复用优先级（强制）")
+    ? text
+    : [text, BROLL_TEMPLATE_REUSE_POLICY].filter(Boolean).join("\n\n");
+}
+
 async function planBrollMotion(args) {
   const task = await findGenerationTask(args.taskId, args);
   if (task.taskType !== "shot" || task.rollType !== "B-ROLL") {
@@ -239,7 +252,7 @@ async function planBrollMotion(args) {
     selectedTemplate: args.selectedTemplate || previous.selectedTemplate || "",
     motionSkeleton: args.motionSkeleton || previous.motionSkeleton || "",
     uiChanges: args.uiChanges || previous.uiChanges || "",
-    researchNotes: args.researchNotes || previous.researchNotes || "",
+    researchNotes: withTemplateReusePolicy(args.researchNotes || previous.researchNotes || ""),
     researchComplete: args.researchComplete === true || previous.researchComplete === true,
     status: approval,
     updatedAt: new Date().toISOString()
@@ -525,7 +538,7 @@ function tools() {
     {
       name: "plan_broll_motion",
       title: "Plan B-roll Motion",
-      description: "强制规划 B-roll 动效。先检查本地模板，再记录两个指定开源仓库和可用的 GIF/视频来源，向用户展示候选骨架；只有 approval=confirmed 的方案才能领取或完成 HyperFrames/Remotion B-roll 任务。",
+      description: `${BROLL_TEMPLATE_REUSE_POLICY} 规划时仍须先检查本地模板、实际查看两个指定开源仓库并记录候选来源，向用户展示候选骨架；只有 approval=confirmed 的方案才能领取或完成 HyperFrames/Remotion B-roll 任务。`,
       inputSchema: {
         type: "object",
         properties: {
@@ -537,7 +550,7 @@ function tools() {
           reviewedSources: {
             type: "array",
             items: { type: "string" },
-            description: "已实际查看的本地模板或网络仓库/帖子 URL；确认时必须包含两个指定开源仓库。"
+            description: "已实际查看的本地模板路径或网络仓库/帖子 URL；优先记录实际复用的模板、组件、骨架或媒体来源，确认时必须包含两个指定开源仓库。"
           },
           sources: {
             type: "array",
@@ -553,10 +566,22 @@ function tools() {
               additionalProperties: true
             }
           },
-          selectedTemplate: { type: "string" },
-          motionSkeleton: { type: "string" },
-          uiChanges: { type: "string" },
-          researchNotes: { type: "string" },
+          selectedTemplate: {
+            type: "string",
+            description: "必须写出优先复用的本地模板或两个指定仓库中的具体模板/组件/骨架；若只能改造，写明原方案和不适配原因，禁止只写自建。"
+          },
+          motionSkeleton: {
+            type: "string",
+            description: "先描述复用或改造的现成骨架及其元素关系，再写最小必要改动；只有记录检索失败证据后才可描述全新骨架。"
+          },
+          uiChanges: {
+            type: "string",
+            description: "只记录把现成模板适配到本镜头所需的背景、颜色、字体、文案和时长改动。"
+          },
+          researchNotes: {
+            type: "string",
+            description: "记录查过的本地模板和两个仓库、实际候选路径、复用/改造选择及证据；若没有合适候选，必须写明原因后才能从零搭建。"
+          },
           researchComplete: { type: "boolean" },
           approval: { type: "string", enum: ["proposed", "confirmed"], default: "proposed" },
           storyboardUrl: { type: "string" }
@@ -908,7 +933,7 @@ async function handle(message) {
       capabilities: { tools: {} },
       serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
       instructions:
-        "Use project tools to create and manage storyboard projects directly through the local API. Use generation tools to process queued assets. For HyperFrames/Remotion B-roll, call plan_broll_motion, show the proposed motion plan to the user, and wait for approval before claiming or completing the task. Never edit project data files directly or complete a generation task before verifying its output."
+        `Use project tools to create and manage storyboard projects directly through the local API. Use generation tools to process queued assets. ${BROLL_TEMPLATE_REUSE_POLICY} For HyperFrames/Remotion B-roll, call plan_broll_motion, show the proposed motion plan to the user, and wait for approval before claiming or completing the task. Never edit project data files directly or complete a generation task before verifying its output.`
     });
     return;
   }

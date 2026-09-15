@@ -20,13 +20,20 @@ If the current Codex session does not expose Storyboard MCP tools such as `list_
 
 For every `B-ROLL` shot routed to `hyperframes` or `remotion`, `plan_broll_motion` is mandatory. Do not claim the task, write a composition, download media, render, or complete the task before this gate is confirmed. The MCP server rejects both claim and completion when the confirmed plan is missing.
 
+### Reuse-first template policy (mandatory)
+
+Treat the local template roots and the two required repositories as the primary production library. Before designing a new composition, identify a concrete reusable template, component, shot skeleton, GIF/MP4, or other directly usable media candidate from the inspected sources. If a source has no suitable candidate, record that explicit empty result and the reason. Select the closest existing candidate, reuse it directly whenever it fits, and make only the minimum changes needed for the shot's dialogue, visual hierarchy, palette, typography, and duration.
+
+Do not start from a blank composition when an existing candidate can carry the shot's core semantic structure. If no candidate fits, adapt the closest existing skeleton and record the original path plus the mismatch and adaptation boundary. A from-scratch motion system is an exception: use it only after the plan records the local roots and both repositories searched, the concrete mismatch, why adaptation would fail, and the smallest new structure required. The confirmed plan must carry this evidence in `selectedTemplate`, `motionSkeleton`, `sources`, and `researchNotes`.
+
 Before asking for confirmation, research the shot in this order:
 
 1. Read every available local B-roll template under the project's template roots or the active workspace template directory. Record the roots checked, including an explicit empty result.
-2. Inspect both required reference repositories, even when a local candidate exists: `https://github.com/heygen-com/hyperframes-launches` and `https://github.com/Vincentwei1021/video-shotcraft`.
-3. When an external reference is useful, inspect public X posts and their attached media. Prefer a directly usable public GIF/MP4/video over a screenshot; use a screenshot only when the media cannot be accessed. Record the source URL and a rights/source note, and never invent an account, post, quote, or asset URL.
+2. Inspect both required reference repositories, even when a local candidate exists: `https://github.com/heygen-com/hyperframes-launches` and `https://github.com/Vincentwei1021/video-shotcraft`. For each repository, record a concrete candidate path or an explicit "no suitable candidate" result with the reason.
+3. Choose the best reusable candidate across the local roots and repositories. Prefer direct reuse; if it needs changes, keep the adaptation minimal and preserve the source skeleton's relationships and phase order.
+4. When an external reference is useful, inspect public X posts and their attached media. Prefer a directly usable public GIF/MP4/video over a screenshot; use a screenshot only when the media cannot be accessed. Record the source URL and a rights/source note, and never invent an account, post, quote, or asset URL.
 
-Call `plan_broll_motion` with `approval: "proposed"` and include the shot's duration, dialogue, audience takeaway, `brollType` (`有素材` / `无素材` / `纯文字`), and `semanticStructure` (`对比` / `聚合` / `筛选` / `层级` / `因果` / `替换` / `展开`). Include the selected local template or the closest reference skeleton, its element relationships and phase order, any direct media sources, and the minimum UI changes: background, anchor color, font, and personalization. Show that proposal to the user and wait for confirmation.
+Call `plan_broll_motion` with `approval: "proposed"` and include the shot's duration, dialogue, audience takeaway, `brollType` (`有素材` / `无素材` / `纯文字`), and `semanticStructure` (`对比` / `聚合` / `筛选` / `层级` / `因果` / `替换` / `展开`). Name the selected reusable local or repository template/component/media path first; if adapting, name the source skeleton and the exact mismatch; include any direct media sources and only the minimum UI changes: background, anchor color, font, and personalization. Show that proposal to the user and wait for confirmation.
 
 After the user confirms, call the same tool again with `approval: "confirmed"`, `researchComplete: true`, both required repository URLs in `reviewedSources`, and complete `selectedTemplate`, `motionSkeleton`, and `uiChanges`. Only then continue to claim and implement the task. If no suitable local or external motion exists, report the gap and ask for a decision rather than silently inventing a new motion system.
 
@@ -64,8 +71,8 @@ After the user confirms, call the same tool again with `approval: "confirmed"`, 
 9. Route by `generator`:
 
    - `image-gen`: use the built-in `imagegen` skill and built-in image generation tool. Treat `visualPrompt` as the primary prompt and honor the task's `aspectRatio`. If the task includes `referenceImagePath`, use that local image as the visual reference/input for the generation or edit. Copy the final verified image into the active workspace before completing the task.
-   - `hyperframes`: use the HyperFrames and HyperFrames CLI skills. Create a self-contained composition using the task's `width`, `height`, duration, and `visualPrompt`, then lint, inspect, render to MP4, and verify the output.
-   - `remotion`: use the Remotion skill. Create or reuse a Remotion composition using the task's `width` and `height`, render an MP4 matching the task duration, and verify the output.
+   - `hyperframes`: use the HyperFrames and HyperFrames CLI skills. Start from the selected local or repository template/component/media skeleton, reuse it directly or make the smallest documented adaptation, then create the composition with the task's `width`, `height`, duration, and `visualPrompt`. Lint, inspect, render to MP4, and verify the output.
+   - `remotion`: use the Remotion skill. Start from the selected local or repository template/component/media skeleton, reuse it directly or make the smallest documented adaptation, then render an MP4 with the task's `width` and `height` matching the task duration, and verify the output.
 
 10. Technically verify each generated video before completion: the file exists, is readable, has the requested `width` and `height`, has a duration close to the task duration, and has a valid video stream/codec. Then visually inspect representative frames to ensure the render is not blank, black, or the wrong composition.
 11. Call `complete_storyboard_generation_task` with the exact absolute output path and correct media type.
@@ -82,6 +89,7 @@ Use the exact absolute `outputDir` supplied by the task. Keep all generated sour
 - Do not silently switch a requested HyperFrames task to Remotion, or vice versa.
 - Do not use external API keys for Image Generation when the built-in image tool is available.
 - Do not process `manual` generator rows.
+- Do not create a blank composition or invent a new motion system before checking the local templates and both required repositories. If no existing material fits, keep the plan's explicit mismatch evidence with the task output.
 - Preserve the requested duration for video tasks.
 - Preserve `projectId`, `aspectRatio`, `width`, and `height`; never return an asset to a different project.
 - Never guess, truncate, or partially read `DESIGN.md` when `hasDesign` is true.
