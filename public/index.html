@@ -263,9 +263,9 @@
         </summary>
         <div class="voice-content">
           <section class="voice-section voice-versions-section">
-            <div class="voice-section-heading">
+            <div class="voice-section-heading voice-current-heading">
               <div>
-                <h2>配音版本</h2>
+                <h2>当前配音</h2>
                 <p id="voice-current-meta">尚未生成配音</p>
               </div>
               <span id="voice-version-count" class="voice-version-count" aria-live="polite">暂无</span>
@@ -273,35 +273,42 @@
             <div id="voice-takes" class="voice-take-list"></div>
             <p id="voice-error" class="voice-error" role="status"></p>
           </section>
-          <section class="voice-section voice-compose-section">
-            <div class="voice-section-heading">
-              <div>
-                <h2>生成新版本</h2>
-                <p>使用镜头台词生成一条新的 VoxCPM 口播。</p>
+          <details class="voice-section voice-compose-section voice-compose-disclosure">
+            <summary class="voice-compose-summary">
+              <span class="voice-disclosure-icon" aria-hidden="true">+</span>
+              <span class="voice-compose-copy">
+                <strong>生成新版本</strong>
+                <small>使用镜头台词生成一条新的 VoxCPM 口播</small>
+              </span>
+              <span class="voice-compose-chevron" aria-hidden="true"></span>
+            </summary>
+            <div class="voice-compose-body">
+              <div class="voice-compose-heading">
+                <p>可选地描述声音，或上传一段参考音频。</p>
+                <button id="voice-generate" class="primary" type="button">生成配音</button>
               </div>
-              <button id="voice-generate" class="primary" type="button">生成配音</button>
-            </div>
-            <label class="voice-field">
-              <span>声音描述 <small>可选</small></span>
-              <input id="voice-instruction" placeholder="自然、清晰的普通话" maxlength="1000" />
-            </label>
-            <div class="voice-field">
-              <span>参考音频 <small>可选</small></span>
-              <div class="voice-reference-control">
-                <div class="voice-reference-actions">
-                  <button id="upload-voice-reference" class="secondary compact-button" type="button">上传 WAV / MP3 / M4A</button>
-                  <button id="delete-voice-reference" class="secondary compact-button" type="button" disabled>删除</button>
-                  <span id="voice-reference-name" class="voice-reference-name" aria-live="polite">未上传参考音频</span>
+              <label class="voice-field">
+                <span>声音描述 <small>可选</small></span>
+                <input id="voice-instruction" placeholder="自然、清晰的普通话" maxlength="1000" />
+              </label>
+              <div class="voice-field">
+                <span>参考音频 <small>可选</small></span>
+                <div class="voice-reference-control">
+                  <div class="voice-reference-actions">
+                    <button id="upload-voice-reference" class="secondary compact-button" type="button">上传 WAV / MP3 / M4A</button>
+                    <button id="delete-voice-reference" class="secondary compact-button" type="button" disabled>删除</button>
+                    <span id="voice-reference-name" class="voice-reference-name" aria-live="polite">未上传参考音频</span>
+                  </div>
+                  <audio id="voice-reference-player" controls preload="metadata" hidden aria-label="试听参考音频"></audio>
+                  <small class="voice-field-hint">支持 WAV、MP3、M4A；上传清晰的人声片段，可克隆参考音色，填写原文可进一步提升还原度。</small>
                 </div>
-                <audio id="voice-reference-player" controls preload="metadata" hidden aria-label="试听参考音频"></audio>
-                <small class="voice-field-hint">支持 WAV、MP3、M4A；上传清晰的人声片段，可克隆参考音色，填写原文可进一步提升还原度。</small>
               </div>
+              <label class="voice-field">
+                <span>参考音频原文 <small>可选</small></span>
+                <input id="voice-reference-text" placeholder="填写参考音频里说的原文" maxlength="1000" />
+              </label>
             </div>
-            <label class="voice-field">
-              <span>参考音频原文 <small>可选</small></span>
-              <input id="voice-reference-text" placeholder="填写参考音频里说的原文" maxlength="1000" />
-            </label>
-          </section>
+          </details>
           <section class="voice-section voice-timing-section">
             <div class="voice-section-heading voice-timing-heading">
               <div>
@@ -309,8 +316,8 @@
                 <p id="timing-note">生成配音后，可识别台词并调整镜头时长。</p>
               </div>
               <div class="voice-actions">
-                <button id="voice-align" class="secondary" type="button">识别并对齐</button>
-                <button id="voice-apply" class="secondary" type="button">应用镜头时长</button>
+                <button id="voice-align" class="secondary" type="button">重新识别</button>
+                <button id="voice-apply" class="primary" type="button">应用镜头时长</button>
               </div>
             </div>
             <div id="voice-timeline"></div>

@@ -2157,6 +2157,23 @@ function renderVoice() {
   const takes = Array.isArray(audio.takes) ? audio.takes : [];
   const takeIndex = takes.findIndex(item => item.id === audio.selectedId);
   const take = takeIndex >= 0 ? takes[takeIndex] : null;
+  const formatDuration = value => {
+    const seconds = Number(value) / 1000;
+    return Number.isFinite(seconds) && seconds >= 0 ? `${seconds.toFixed(2)} 秒` : "时长未知";
+  };
+  const buildWaveform = (className, count, seed = 0) => {
+    const waveform = document.createElement("div");
+    waveform.className = className;
+    waveform.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < count; index += 1) {
+      const bar = document.createElement("span");
+      bar.className = `${className}-bar`;
+      const height = 18 + Math.round(Math.abs(Math.sin(index * 1.47 + seed)) * 58);
+      bar.style.setProperty("--bar-height", `${height}%`);
+      waveform.append(bar);
+    }
+    return waveform;
+  };
   const currentMeta = document.querySelector("#voice-current-meta");
   const busy = ["generating", "aligning"].includes(audio.status);
   const hasSpokenShots = Array.isArray(project?.shots) && project.shots.some(shot => String(shot.dialogue || "").trim());
@@ -2180,7 +2197,7 @@ function renderVoice() {
   }
   if (document.activeElement !== referenceText) referenceText.value = reference?.text || "";
   currentMeta.textContent = take
-    ? `当前使用 · 版本 ${String(takeIndex + 1).padStart(2, "0")} · ${(take.durationMs / 1000).toFixed(2)} 秒`
+    ? `版本 ${String(takeIndex + 1).padStart(2, "0")} · ${formatDuration(take.durationMs)}`
     : "尚未生成配音";
   document.querySelector("#voice-error").textContent = audio.error || "";
   document.querySelector("#voice-generate").disabled = busy;
@@ -2193,62 +2210,142 @@ function renderVoice() {
       ? "当前项目没有带台词的镜头，无法进行对齐；请先在分镜中填写台词。"
       : take.alignEngine?.startsWith("whisper")
         ? "Whisper 已完成本地识别，可试听后微调时间。无台词镜头保留原时长。"
-        : "尚未完成识别对齐，请先点击“识别并对齐”。";
-  document.querySelector("#voice-timeline").replaceChildren(...(take?.timeline || []).map(segment => {
-    const row = document.createElement("div"); row.className = "timing-row"; row.dataset.shotId = segment.shotId;
-    const text = document.createElement("span"); text.textContent = segment.text;
-    row.append(text);
-    for (const [key, label] of [["start", "起点（秒）"], ["end", "终点（秒）"]]) {
-      const wrapper = document.createElement("label"); wrapper.textContent = label;
-      const input = document.createElement("input"); input.type = "number"; input.min = "0"; input.step = "0.01";
-      input.max = String(take.durationMs / 1000); input.value = String(segment[key] / 1000); input.dataset.timeKey = key;
-      wrapper.append(input); row.append(wrapper);
-    }
-    return row;
-  }));
+        : "尚未完成识别，请先点击“重新识别”。";
+  const timelineRoot = document.querySelector("#voice-timeline");
+  const timeline = Array.isArray(take?.timeline) ? take.timeline : [];
+  timelineRoot.replaceChildren();
+  if (!timeline.length) {
+    const empty = document.createElement("p");
+    empty.className = "voice-timeline-empty";
+    empty.textContent = take ? "识别后，台词片段会显示在这里。" : "生成配音后，台词片段会显示在这里。";
+    timelineRoot.append(empty);
+  } else {
+    const waveform = document.createElement("div");
+    waveform.className = "timing-waveform";
+    waveform.append(buildWaveform("timing-waveform-bars", 84, timeline.length));
+    const durationMs = Number(take.durationMs) || 0;
+    const firstStart = Number(timeline[0]?.start) || 0;
+    const progress = durationMs > 0 ? Math.min(96, Math.max(4, (firstStart / durationMs) * 100)) : 4;
+    const playhead = document.createElement("span");
+    playhead.className = "timing-waveform-playhead";
+    playhead.style.left = `${progress}%`;
+    waveform.append(playhead);
+    const waveformMeta = document.createElement("div");
+    waveformMeta.className = "timing-waveform-meta";
+    const startLabel = document.createElement("span");
+    startLabel.textContent = "0:00";
+    const endLabel = document.createElement("span");
+    endLabel.textContent = durationMs > 0 ? `${Math.floor(durationMs / 60000)}:${String(Math.floor((durationMs % 60000) / 1000)).padStart(2, "0")}` : "—";
+    waveformMeta.append(startLabel, endLabel);
+    const segments = document.createElement("div");
+    segments.className = "timing-segments";
+    timeline.forEach((segment, index) => {
+      const row = document.createElement("div");
+      row.className = "timing-row";
+      row.dataset.shotId = segment.shotId;
+      row.dataset.segment = String(index + 1);
+      const text = document.createElement("span");
+      text.className = "timing-row-text";
+      text.textContent = segment.text;
+      row.append(text);
+      for (const [key, label] of [["start", "起点"], ["end", "终点"]]) {
+        const wrapper = document.createElement("label");
+        const labelText = document.createElement("span");
+        labelText.textContent = label;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.step = "0.01";
+        input.max = String(durationMs / 1000);
+        input.value = String((Number(segment[key]) || 0) / 1000);
+        input.dataset.timeKey = key;
+        wrapper.append(labelText, input);
+        row.append(wrapper);
+      }
+      segments.append(row);
+    });
+    timelineRoot.append(waveform, waveformMeta, segments);
+  }
   document.querySelector("#voice-version-count").textContent = takes.length ? `${takes.length} 条` : "暂无";
   const versionList = document.querySelector("#voice-takes");
   if (!takes.length) {
     const empty = document.createElement("p");
     empty.className = "voice-take-empty";
-    empty.textContent = "生成第一条配音后，所有版本都会集中显示在这里。";
+    empty.textContent = "生成第一条配音后，会显示在这里。";
     versionList.replaceChildren(empty);
     return;
   }
-  versionList.replaceChildren(...takes.map((item, index) => {
-    const selected = item.id === audio.selectedId;
+  versionList.replaceChildren();
+  if (!take) {
+    const empty = document.createElement("p");
+    empty.className = "voice-take-empty";
+    empty.textContent = "请选择一个配音版本继续对齐。";
+    versionList.append(empty);
+  } else {
     const card = document.createElement("article");
     card.className = "voice-take-card";
-    card.dataset.selected = String(selected);
-
+    card.dataset.selected = "true";
     const header = document.createElement("div");
     header.className = "voice-take-header";
     const copy = document.createElement("div");
+    copy.className = "voice-take-copy";
     const title = document.createElement("strong");
-    title.textContent = `版本 ${String(index + 1).padStart(2, "0")}`;
+    title.textContent = `版本 ${String(takeIndex + 1).padStart(2, "0")}`;
     const meta = document.createElement("span");
-    meta.textContent = `${(item.durationMs / 1000).toFixed(2)} 秒 · ${item.alignEngine?.startsWith("whisper") ? "已对齐" : "未对齐"}`;
+    meta.textContent = `${formatDuration(take.durationMs)} · ${take.alignEngine?.startsWith("whisper") ? "已对齐" : "未对齐"}`;
     copy.append(title, meta);
-    const choose = document.createElement("button");
-    choose.type = "button";
-    choose.className = selected ? "voice-take-selected" : "voice-take-select";
-    choose.textContent = selected ? "当前使用" : "使用此版本";
-    choose.disabled = busy || selected;
-    choose.setAttribute("aria-pressed", String(selected));
-    choose.addEventListener("click", () => voiceAction("select", { takeId: item.id }));
-    header.append(copy, choose);
+    const current = document.createElement("span");
+    current.className = "voice-take-current";
+    current.textContent = "当前使用";
+    header.append(copy, current);
     card.append(header);
-
-    if (item.url) {
+    const preview = document.createElement("div");
+    preview.className = "voice-audio-preview";
+    preview.append(buildWaveform("voice-audio-waveform", 60, takeIndex + 1));
+    const previewLabel = document.createElement("span");
+    previewLabel.textContent = "波形预览";
+    preview.append(previewLabel);
+    card.append(preview);
+    if (take.url) {
       const player = document.createElement("audio");
       player.controls = true;
       player.preload = "metadata";
-      player.src = item.url;
-      player.setAttribute("aria-label", `试听配音版本 ${index + 1}`);
+      player.src = take.url;
+      player.setAttribute("aria-label", `试听当前配音版本 ${takeIndex + 1}`);
       card.append(player);
     }
-    return card;
-  }));
+    versionList.append(card);
+  }
+  const otherTakes = takes
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.id !== audio.selectedId);
+  if (otherTakes.length) {
+    const switcher = document.createElement("div");
+    switcher.className = "voice-take-switcher";
+    const change = document.createElement("button");
+    change.type = "button";
+    change.className = "voice-take-change";
+    change.textContent = "更换版本";
+    change.setAttribute("aria-expanded", "false");
+    const options = document.createElement("div");
+    options.className = "voice-take-options";
+    options.hidden = true;
+    otherTakes.forEach(({ item, index }) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "voice-take-option";
+      option.textContent = `版本 ${String(index + 1).padStart(2, "0")} · ${formatDuration(item.durationMs)} · ${item.alignEngine?.startsWith("whisper") ? "已对齐" : "未对齐"}`;
+      option.disabled = busy;
+      option.addEventListener("click", () => voiceAction("select", { takeId: item.id }));
+      options.append(option);
+    });
+    change.addEventListener("click", () => {
+      options.hidden = !options.hidden;
+      change.setAttribute("aria-expanded", String(!options.hidden));
+    });
+    switcher.append(change, options);
+    versionList.append(switcher);
+  }
 }
 async function uploadVoiceReference(file) {
   if (!project || !file) return;
