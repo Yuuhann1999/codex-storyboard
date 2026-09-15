@@ -16,6 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..600;1,9..40,300..600&family=JetBrains+Mono:wght@400;500;600&display=swap" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/voice-player.css" />
 </head>
 <body>
   <header class="topbar">
@@ -268,17 +269,17 @@
                 <h2>当前配音</h2>
                 <p id="voice-current-meta">尚未生成配音</p>
               </div>
-              <span id="voice-version-count" class="voice-version-count" aria-live="polite">暂无</span>
+              <div id="voice-version-switch"></div>
             </div>
             <div id="voice-takes" class="voice-take-list"></div>
             <p id="voice-error" class="voice-error" role="status"></p>
           </section>
           <details class="voice-section voice-compose-section voice-compose-disclosure">
             <summary class="voice-compose-summary">
-              <span class="voice-disclosure-icon" aria-hidden="true">+</span>
+              <span class="voice-disclosure-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg></span>
               <span class="voice-compose-copy">
                 <strong>生成新版本</strong>
-                <small>使用镜头台词生成一条新的 VoxCPM 口播</small>
+                <small>使用镜头台词生成新的口播</small>
               </span>
               <span class="voice-compose-chevron" aria-hidden="true"></span>
             </summary>
